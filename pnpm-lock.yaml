@@ -181,12 +181,21 @@ importers:
 
   apps/server:
     dependencies:
+      '@fastify/multipart':
+        specifier: ^10.1.6
+        version: 10.1.6
+      '@opencode/client':
+        specifier: 2.2.1
+        version: 2.2.1(effect@4.0.1)
       '@studi0/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       fastify:
         specifier: ^5.12.7
         version: 5.12.7
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       '@types/node':
         specifier: ^24.19.2
@@ -516,6 +525,9 @@ packages:
   '@fastify/ajv-compiler@4.0.7':
     resolution: {integrity: sha512-VP0yIfwlc1ohj733keYDqyHm1VWeP9VQxYomunhr90jkC4aNNibbkrRiaNgPgqj1ORxUenILR4qzA/ppYBNAtQ==}
 
+  '@fastify/busboy@3.2.4':
+    resolution: {integrity: sha512-lQS8xcXT54rdJb+wlG/Q7SMSdtkZEpLPHooSDUZyyZm9LJD7X1kONPhVoPaHq+dsPtWUGGLIz9gBNhs9qKbylw==}
+
   '@fastify/deepmerge@3.2.4':
     resolution: {integrity: sha512-kc8GQq5gX9RRhw0rov3DMrN8wS8yRlxJRdDzsYwwdBV/wazuVgc/1K7CKL90tlvu3RlHan6Y0R0aE3nJtBz2eQ==}
 
@@ -530,6 +542,9 @@ packages:
 
   '@fastify/merge-json-schemas@0.2.2':
     resolution: {integrity: sha512-d/gx9sRbUCVgGRGzma46wLcwiY8noTqO2Nmjg/vbTARxHRE5bdh5PIL8s97Lt1X7ScRWRW52eVYxwIoPwIdVUA==}
+
+  '@fastify/multipart@10.1.6':
+    resolution: {integrity: sha512-5ykP7SkCbL06ek+j7fa4o1F8XASF4+KjqVLbuANqXunxXqjWdCQk0pw/+kWH3e8ho7Mw21EhuZp24EqtR04yKg==}
 
   '@fastify/proxy-addr@5.1.2':
     resolution: {integrity: sha512-uqB4QsgVoro0XDC+DIftIMGXHdBPn+lK6Ek3xXAIxPMCJfqxnbtyEoMCm2KPUVOuIosd7Cyw9HawEqMFM/UA+g==}
@@ -563,6 +578,23 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@opencode/client@2.2.1':
+    resolution: {integrity: sha512-7QWtocDRR9eUsCJpyaj6k+aAEVDWO2CIzn9lwDNBJhiyt2hMf+yOyV/BKeK/9R7qKcXEOZ0tlGDvQC8HEtyjQg==}
+    peerDependencies:
+      effect: 4.0.1
+      solid-js: '>=1.9.0'
+    peerDependenciesMeta:
+      effect:
+        optional: true
+      solid-js:
+        optional: true
+
+  '@opencode/protocol@2.2.1':
+    resolution: {integrity: sha512-lqkkRhrckEKmiSJi249rvfX/fXX8JeiMS7adtXonO1Ol3IqnEqY4uSZgvQiQ11SBR5RyDQaRW9KGoOjaTY4PAQ==}
+
+  '@opencode/schema@2.2.1':
+    resolution: {integrity: sha512-TicxPQC1UKqq954X1yUKmBlXfJYl5CRr52FKwLZbYOfTxJd406Hoqt2arM4YI3c+abs17b9sumoq5uqFLhiGFA==}
 
   '@oxc-project/types@0.156.0':
     resolution: {integrity: sha512-1Duyg48TdJNdyhEB8Xn1L36bT9Pv6GUtlKjHxOys8xkaF/rQq3XJE+bAurSK/AgIz5mGFsb77cn9Pb20+WCScw==}
@@ -668,6 +700,9 @@ packages:
 
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
+
+  '@standard-schema/spec@1.1.0':
+    resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
   '@testing-library/dom@10.4.2':
     resolution: {integrity: sha512-yzr2S9HyAIdhz2/6qHgbs665Q7PKVcDF05vsOlHPxG1mo36gKVesdYVeDLnXgfjJ03CrKRk08knc6+E/9m8v2Q==}
@@ -943,6 +978,9 @@ packages:
   dom-accessibility-api@0.5.16:
     resolution: {integrity: sha512-X7BJ2yElsnOJ30pZF4uIIDfBEVgF4XEBxL9Bxhy6dnrm5hkzqmsWHGTiHqRiITNhMyFLyAiWndIJP7Z1NTteDg==}
 
+  effect@4.0.1:
+    resolution: {integrity: sha512-b1VlQG9g8fwxE5QnIZuPoOP/0MsqHJSRKxUijjoM80E5q95FXrX5yWtY5XI8G+GJsBQAVSDbLS458z9a++uVvw==}
+
   entities@8.1.0:
     resolution: {integrity: sha512-kxL7msIffSuh9aaFAMD7rxAIuTRMAHMeBtgHW2yUdWw732ZNh4MehkF2gdjvtdmikkaIP9bFDDJOPlsvm7avrA==}
     engines: {node: '>=20.19.0'}
@@ -1036,6 +1074,9 @@ packages:
 
   fast-uri@4.2.3:
     resolution: {integrity: sha512-I1PXwP5eAhlNlcdpjt9CgB59op2ZvZfxw+BkqGFVIUOgNpCVTcTqp3HhTX7brxj5vsip+nSY4nTvff+eIA76hg==}
+
+  fastify-plugin@6.0.1:
+    resolution: {integrity: sha512-4wW4RxSmvPXLrh5mgQEiu43qU3bw44N2ss4FTkTkQIbprUhE+/s43QX0j/ttcztdWK7PEkHqVthdc5GdEGDvjA==}
 
   fastify@5.12.7:
     resolution: {integrity: sha512-v4pEPsTRPuqlDIYiQFB+BHjVN4SdHX9u0ABk0ZDUKbbdY1vsNryUd1j4Z+jQEZajvYIVk047Kimva9/AJ79GYw==}
@@ -1836,6 +1877,8 @@ snapshots:
       ajv-formats: 3.0.1
       fast-uri: 4.2.3
 
+  '@fastify/busboy@3.2.4': {}
+
   '@fastify/deepmerge@3.2.4': {}
 
   '@fastify/error@4.2.1': {}
@@ -1849,6 +1892,14 @@ snapshots:
   '@fastify/merge-json-schemas@0.2.2':
     dependencies:
       dequal: 2.0.3
+
+  '@fastify/multipart@10.1.6':
+    dependencies:
+      '@fastify/busboy': 3.2.4
+      '@fastify/deepmerge': 3.2.4
+      '@fastify/error': 4.2.1
+      fastify-plugin: 6.0.1
+      secure-json-parse: 4.1.1
 
   '@fastify/proxy-addr@5.1.2':
     dependencies:
@@ -1879,6 +1930,23 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
+
+  '@opencode/client@2.2.1(effect@4.0.1)':
+    dependencies:
+      '@opencode/protocol': 2.2.1
+      '@opencode/schema': 2.2.1
+    optionalDependencies:
+      effect: 4.0.1
+
+  '@opencode/protocol@2.2.1':
+    dependencies:
+      '@opencode/schema': 2.2.1
+      effect: 4.0.1
+
+  '@opencode/schema@2.2.1':
+    dependencies:
+      '@standard-schema/spec': 1.1.0
+      effect: 4.0.1
 
   '@oxc-project/types@0.156.0': {}
 
@@ -1930,6 +1998,8 @@ snapshots:
     optional: true
 
   '@rolldown/pluginutils@1.0.1': {}
+
+  '@standard-schema/spec@1.1.0': {}
 
   '@testing-library/dom@10.4.2':
     dependencies:
@@ -2205,6 +2275,8 @@ snapshots:
 
   dom-accessibility-api@0.5.16: {}
 
+  effect@4.0.1: {}
+
   entities@8.1.0: {}
 
   es-module-lexer@2.3.2: {}
@@ -2338,6 +2410,8 @@ snapshots:
   fast-uri@3.1.9: {}
 
   fast-uri@4.2.3: {}
+
+  fastify-plugin@6.0.1: {}
 
   fastify@5.12.7:
     dependencies:

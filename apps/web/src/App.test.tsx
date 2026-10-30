@@ -1,10 +1,35 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 
+function jsonResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
 describe('App', () => {
-  it('renders the app shell', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/api/subjects')) return jsonResponse([]);
+      return jsonResponse({
+        ok: true,
+        opencode: { running: false, pid: null, port: 44096, healthy: false },
+      });
+    }));
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it('renders the app shell with sidebar and empty state', async () => {
     render(<App />);
     expect(screen.getByRole('heading', { name: 'studi0' })).toBeTruthy();
+    expect(await screen.findByText('No subjects yet.')).toBeTruthy();
+    expect(screen.getByText('No subject selected')).toBeTruthy();
   });
 });

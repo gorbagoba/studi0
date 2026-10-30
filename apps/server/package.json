@@ -10,8 +10,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@fastify/multipart": "^10.1.6",
+    "@opencode/client": "2.2.1",
     "@studi0/shared": "workspace:*",
-    "fastify": "^5.12.7"
+    "fastify": "^5.12.7",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
