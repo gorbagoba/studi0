@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { realpathSync } from 'node:fs';
 import { HttpError } from '../util/errors.js';
 
 /**
@@ -23,6 +24,17 @@ export function safeResolve(root: string, rel: string): string {
   if (abs !== absRoot && !abs.startsWith(absRoot + path.sep)) {
     throw new HttpError('PATH_TRAVERSAL', `path escapes the subject: ${rel}`);
   }
+  // symlink/junction containment: the real location must stay inside the real root
+  try {
+    const real = realpathSync(abs);
+    const realRoot = realpathSync(absRoot);
+    if (real !== realRoot && !real.startsWith(realRoot + path.sep)) {
+      throw new HttpError('PATH_TRAVERSAL', `path escapes the subject: ${rel}`);
+    }
+  } catch (e) {
+    if (e instanceof HttpError) throw e;
+    // path or root not on disk yet — nothing to traverse through
+  }
   return abs;
 }
 
@@ -35,10 +47,14 @@ export function isInside(dir: string, abs: string): boolean {
 /** Reject names that could escape or break Windows files (uploads, wiki pages). */
 export function sanitizeName(name: string): string {
   const base = name.replaceAll('\\', '/').split('/').pop() ?? '';
-  const cleaned = base
+  let cleaned = base
     .replace(/[<>:"|?*]/g, '')
     .replace(/\p{Cc}/gu, '')
     .replace(/^\.+/, '')
     .trim();
+  // Windows reserves these stems on any extension (CON.txt, NUL, COM1.md...)
+  const dot = cleaned.indexOf('.');
+  const stem = dot === -1 ? cleaned : cleaned.slice(0, dot);
+  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(stem)) cleaned = `_${cleaned}`;
   return (cleaned || 'file').slice(0, 180);
 }

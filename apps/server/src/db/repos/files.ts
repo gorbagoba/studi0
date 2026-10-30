@@ -32,7 +32,3 @@ export function upsertFile(
   ).run(id, f.subject_id, f.rel_path, f.bytes, f.mtime, f.origin);
   return { id, ...f };
 }
-
-export function listFiles(db: Db, subjectId: string): FileRow[] {
-  return db.prepare('SELECT * FROM files WHERE subject_id = ?').all(subjectId) as unknown as FileRow[];
-}

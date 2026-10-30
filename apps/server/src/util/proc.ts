@@ -48,10 +48,6 @@ export function resolveOpencodeBin(): string | null {
   return binCache;
 }
 
-export function clearOpencodeBinCache(): void {
-  binCache = undefined;
-}
-
 function execFileSyncSafe(file: string, args: string[]): string {
   return execFileSync(file, args, { windowsHide: true, encoding: 'utf8' });
 }

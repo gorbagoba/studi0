@@ -143,6 +143,100 @@ describe('teacher chat (T06)', () => {
     expect(sessions[0].messageCount).toBe(2);
   });
 
+  it('scans only the latest assistant message for quiz blocks (no re-deposit of older turns)', async () => {
+    h = await makeHarness();
+    const id = await createSubject('Chat5');
+    patchOc(h, fakeClient('oc-5'));
+    const session = (
+      await h.app.inject({ method: 'POST', url: `/api/subjects/${id}/chat/sessions`, payload: {} })
+    ).json();
+    const quizBlock = (topic: string) =>
+      '```studi0-quiz\n' +
+      JSON.stringify({
+        topic,
+        questions: [
+          {
+            topic,
+            type: 'mcq',
+            prompt: `${topic}?`,
+            options: [
+              { id: 'a', text: 'x' },
+              { id: 'b', text: 'y' },
+            ],
+            key: { answerIndex: 0 },
+          },
+        ],
+      }) +
+      '\n```';
+    h.ctx.oc.client = () =>
+      fakeClient('oc-5', {
+        tokens: ['tok'],
+        history: [
+          { role: 'user', text: 'earlier question' },
+          { role: 'assistant', text: `Old answer:\n${quizBlock('old-topic')}` },
+          { role: 'user', text: 'quiz me again' },
+          { role: 'assistant', text: `New answer:\n${quizBlock('new-topic')}` },
+        ],
+      });
+
+    const res = await h.app.inject({
+      method: 'POST',
+      url: `/api/chat/sessions/${session.id}/messages`,
+      payload: { content: 'quiz me again' },
+    });
+    expect(res.statusCode).toBe(200);
+    const bank = (
+      await h.app.inject({ method: 'GET', url: `/api/subjects/${id}/questions` })
+    ).json();
+    // only the latest assistant reply is scanned — the older block must not re-deposit
+    expect(bank).toHaveLength(1);
+    expect(bank[0].payload.prompt).toBe('new-topic?');
+  });
+
+  it('rejects a second concurrent turn on the same session with 409 TURN_IN_PROGRESS', async () => {
+    h = await makeHarness();
+    const id = await createSubject('Chat6');
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const client = {
+      session: {
+        create: async () => ({ id: 'oc-6' }),
+        prompt: async () => {
+          await gate;
+        },
+        interrupt: async () => ({}),
+      },
+      message: { list: async () => ({ data: [], cursor: {} }) },
+      event: {
+        subscribe: async function* () {
+          await gate;
+          yield { type: 'session.idle', data: { sessionID: 'oc-6' } };
+        },
+      },
+      permission: { reply: async () => undefined },
+    } as unknown as OcClient;
+    patchOc(h, client);
+    const session = (
+      await h.app.inject({ method: 'POST', url: `/api/subjects/${id}/chat/sessions`, payload: {} })
+    ).json();
+
+    const first = h.app.inject({
+      method: 'POST',
+      url: `/api/chat/sessions/${session.id}/messages`,
+      payload: { content: 'one' },
+    });
+    await new Promise((r) => setTimeout(r, 50)); // let the first turn get in flight
+    const second = await h.app.inject({
+      method: 'POST',
+      url: `/api/chat/sessions/${session.id}/messages`,
+      payload: { content: 'two' },
+    });
+    expect(second.statusCode).toBe(409);
+    expect(second.json().error.code).toBe('TURN_IN_PROGRESS');
+    release();
+    expect((await first).statusCode).toBe(200);
+  });
+
   it('history: 404 unknown session, 410 when opencode lost it', async () => {
     h = await makeHarness();
     const id = await createSubject('Chat3');

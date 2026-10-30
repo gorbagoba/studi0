@@ -3,28 +3,10 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { safeResolve, sanitizeName } from '../fs/paths.js';
 import { safeWriteFile } from '../fs/safeWrite.js';
-import { VERIFICATION_PROMPT } from './prompts.js';
 import type { SubjectRow } from '../db/repos/subjects.js';
-import type { OneshotFn } from '../util/oneshot.js';
 import { HttpError } from '../util/errors.js';
 
 const wikiDir = (subject: SubjectRow): string => safeResolve(subject.path, 'graphify-out/wiki');
-
-export async function writeVerifyReport(subject: SubjectRow, report: string): Promise<void> {
-  const abs = safeResolve(subject.path, 'graphify-out/VERIFY_REPORT.md');
-  await safeWriteFile(abs, report.trimEnd() + '\n');
-}
-
-/** Dispatch the verification run and persist its edge report. */
-export async function runVerification(
-  oneshot: OneshotFn,
-  subject: SubjectRow,
-  signal?: AbortSignal,
-): Promise<string> {
-  const report = await oneshot(subject.path, VERIFICATION_PROMPT, signal);
-  await writeVerifyReport(subject, report);
-  return report;
-}
 
 export async function listWikiPages(subject: SubjectRow): Promise<{ name: string; updatedAt: string }[]> {
   const dir = wikiDir(subject);

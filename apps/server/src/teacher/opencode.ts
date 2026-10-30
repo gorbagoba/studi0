@@ -12,6 +12,7 @@ export interface OcStatus {
 }
 
 const BOOT_TIMEOUT_MS = 15_000;
+const PROBE_FAILURES_BEFORE_REBOOT = 6; // ~60s of consecutive probe failures
 
 /**
  * Single owner of the managed `opencode serve` process.
@@ -49,6 +50,10 @@ export class OpencodeManager {
   }
 
   async start(): Promise<void> {
+    if (this.probeTimer) {
+      clearInterval(this.probeTimer); // a re-boot must not stack probe loops
+      this.probeTimer = null;
+    }
     const { child, done } = spawnArgs(
       ['serve', '--port', String(this.cfg.ocPort), '--hostname', this.cfg.ocHost],
       process.cwd(),
@@ -77,9 +82,21 @@ export class OpencodeManager {
   }
 
   private startProbeLoop(): void {
+    let failures = 0;
     this.probeTimer = setInterval(() => {
-      void this.probeAuth(true).then((ok) => {
+      void this.probeAuth(true).then(async (ok) => {
         this.healthy = ok;
+        if (ok) {
+          failures = 0;
+          return;
+        }
+        if (++failures < PROBE_FAILURES_BEFORE_REBOOT) return;
+        failures = 0;
+        // dead serve: boot() clears the port zombie; cached client/password are stale
+        this.healthy = false;
+        this.password = null;
+        this.ocClient = null;
+        await this.boot().catch(() => undefined);
       });
     }, 10_000);
     this.probeTimer.unref();

@@ -3,9 +3,10 @@ import multipart from '@fastify/multipart';
 import { ZodError } from 'zod';
 import { makeConfig, type Config } from '../config.js';
 import { openDb, type Db } from '../db/index.js';
-import { closeStaleRunning } from '../db/repos/jobs.js';
+import { closeStaleRunning, staleRunningPids } from '../db/repos/jobs.js';
 import { EventBus } from './sse.js';
 import { HttpError } from '../util/errors.js';
+import { isAlive, killTreeWithDeadline } from '../util/proc.js';
 import { makeOneshot } from '../util/oneshot.js';
 import { JobQueue } from '../pipeline/queue.js';
 import { makeRunPipeline, type RunPipelineFn } from '../pipeline/runner.js';
@@ -30,19 +31,38 @@ export function buildApp(opts: { dataDir?: string; dbPath?: string } = {}): Buil
   const cfg: Config = makeConfig(opts.dataDir);
   const db: Db = openDb(opts.dbPath ?? cfg.dbPath);
 
-  // boot cleanup: jobs left running by a previous server life are closed honestly
+  // boot cleanup: kill-tree orphans a previous life left writing, then close their rows honestly
+  for (const pid of staleRunningPids(db)) {
+    if (isAlive(pid)) killTreeWithDeadline(pid);
+  }
   closeStaleRunning(db);
 
   const events = new EventBus();
   const oc = new OpencodeManager(cfg);
   const oneshot = makeOneshot(cfg);
-  const runPipeline: RunPipelineFn = makeRunPipeline(oneshot);
+  const runPipeline: RunPipelineFn = makeRunPipeline(oneshot, db);
   const queue = new JobQueue(db, events, cfg, runPipeline);
   const feedQuestions = makeFeedQuestions(db, events, oneshot);
 
   const ctx: Ctx = { cfg, db, events, queue, oc, oneshot, runPipeline, feedQuestions };
 
-  const app = Fastify({ logger: false, bodyLimit: cfg.maxFileBytes + 1024 * 1024 });
+  const app = Fastify({ logger: true, bodyLimit: cfg.maxFileBytes + 1024 * 1024 });
+
+  // CSRF-class guard: drive-by POSTs from any website. Browsers always send
+  // Origin/Sec-Fetch-Site on such requests; header-absent clients (curl, tests) pass.
+  app.addHook('onRequest', async (req, reply) => {
+    if (req.method !== 'POST' && req.method !== 'PUT' && req.method !== 'PATCH' && req.method !== 'DELETE') {
+      return;
+    }
+    const origin = req.headers.origin;
+    const site = req.headers['sec-fetch-site'];
+    if (origin === undefined && site === undefined) return;
+    if (origin === 'http://127.0.0.1:5173' || site === 'same-origin' || site === 'none') return;
+    return reply.status(403).send({
+      error: { code: 'VALIDATION', message: 'cross-origin request rejected' },
+    });
+  });
+
   app.register(multipart, {
     limits: { fileSize: cfg.maxFileBytes, files: 100 },
   });

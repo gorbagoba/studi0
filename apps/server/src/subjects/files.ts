@@ -100,7 +100,10 @@ export async function saveUpload(
   try {
     await pipeline(stream, ws);
   } catch (e) {
-    await rm(target.abs, { force: true });
+    // EEXIST = a concurrent upload won the name — deleting would kill its file
+    if ((e as NodeJS.ErrnoException).code !== 'EEXIST') {
+      await rm(target.abs, { force: true });
+    }
     const msg = e instanceof Error && e.message === 'file too large' ? 'exceeds 200 MB limit' : 'write failed';
     return { ok: false, reason: msg, unsupported: false };
   }  const s = await stat(target.abs);

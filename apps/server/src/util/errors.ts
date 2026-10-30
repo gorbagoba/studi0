@@ -9,6 +9,7 @@ export const statusForCode: Record<ErrorCode, number> = {
   JOB_NOT_FOUND: 404,
   SESSION_NOT_FOUND: 404,
   QUESTION_NOT_FOUND: 404,
+  TURN_IN_PROGRESS: 409,
   NAME_TAKEN: 409,
   JOB_CONFLICT: 409,
   JOB_NOT_CANCELLABLE: 409,

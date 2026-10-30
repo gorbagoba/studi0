@@ -45,7 +45,9 @@ export function sseReply(reply: FastifyReply, cfg: Config): Send {
   raw.setHeader('cache-control', 'no-cache');
   raw.setHeader('connection', 'keep-alive');
   raw.flushHeaders?.();
+  raw.on('error', () => {}); // dead socket must not crash the process mid-stream
   const send: Send = (event, data) => {
+    if (raw.destroyed || raw.writableEnded) return;
     raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   };
   const heartbeat = setInterval(() => {

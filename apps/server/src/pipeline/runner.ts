@@ -3,6 +3,8 @@ import { parseFailures, parseProgress, type FailureLine } from './parse.js';
 import { killTreeWithDeadline, spawnArgs } from '../util/proc.js';
 import { extractionPrompt, VERIFICATION_PROMPT } from '../graph/prompts.js';
 import { safeWriteFile } from '../fs/safeWrite.js';
+import * as jobsRepo from '../db/repos/jobs.js';
+import type { Db } from '../db/index.js';
 import type { JobRow } from '../db/repos/jobs.js';
 import type { SubjectRow } from '../db/repos/subjects.js';
 import type { OneshotFn } from '../util/oneshot.js';
@@ -39,10 +41,12 @@ export function killJob(jobId: string): void {
  * verification pass as a second headless run writing VERIFY_REPORT.md.
  */
 export const makeRunPipeline =
-  (oneshot: OneshotFn): RunPipelineFn =>
+  (oneshot: OneshotFn, db: Db): RunPipelineFn =>
   async (job, subject, onUpdate, signal) => {
     const prompt = extractionPrompt(job.kind, subject.name);
     const { pid, done, child } = spawnArgs(['run', '--auto', prompt], subject.path);
+    // persist the pid: boot cleanup must be able to kill-tree orphans after a restart
+    jobsRepo.updateJob(db, job.id, { pid: pid !== undefined ? String(pid) : null });
     let aborted = false;
     const abort = () => {
       aborted = true;
@@ -74,11 +78,13 @@ export const makeRunPipeline =
         return { status: 'cancelled', partial: parseFailures(res.stdout), error: null };
       }
       if (res.code !== 0) {
+        // stderr tail stays in server logs — the job row (client-visible) gets a generic message
         const stderrTail = res.stderr.split(/\r?\n/).filter(Boolean).slice(-3).join(' | ');
+        console.error(`[job ${job.id}] opencode run exited ${res.code}: ${stderrTail || 'no stderr'}`);
         return {
           status: 'failed',
           partial: parseFailures(res.stdout),
-          error: stderrTail || `opencode run exited with code ${res.code}`,
+          error: `opencode run exited with code ${res.code}`,
         };
       }
       const failures = parseFailures(res.stdout);

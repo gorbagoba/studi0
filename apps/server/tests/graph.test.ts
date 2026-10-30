@@ -55,6 +55,25 @@ describe('graph / wiki / corrections / lessons (T05)', () => {
     expect(ok.statusCode).toBe(200);
     expect(ok.headers['content-type']).toContain('text/html');
     expect(ok.body).toContain('graph');
+    // scriptable types download as attachments; data files stream inline
+    await writeFile(path.join(root, 'graphify-out', 'graph.js'), 'alert(1)');
+    await writeFile(path.join(root, 'graphify-out', 'g.svg'), '<svg/>');
+    await writeFile(path.join(root, 'graphify-out', 'data.json'), '{}');
+    expect(
+      (await h.app.inject({ method: 'GET', url: `/api/subjects/${id}/graph/raw/graph.js` })).headers[
+        'content-disposition'
+      ],
+    ).toContain('attachment');
+    expect(
+      (await h.app.inject({ method: 'GET', url: `/api/subjects/${id}/graph/raw/g.svg` })).headers[
+        'content-disposition'
+      ],
+    ).toContain('attachment');
+    expect(
+      (await h.app.inject({ method: 'GET', url: `/api/subjects/${id}/graph/raw/data.json` })).headers[
+        'content-disposition'
+      ],
+    ).toBeUndefined();
     const evil = await h.app.inject({
       method: 'GET',
       url: `/api/subjects/${id}/graph/raw/../material/secret.pdf`,

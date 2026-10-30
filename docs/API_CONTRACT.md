@@ -12,6 +12,7 @@ Backend surface for `apps/server`. Frontend (`apps/web`) is the only client. All
   interface ApiError { error: { code: ErrorCode; message: string; details?: unknown } }
   ```
 - **SSE framing**: `text/event-stream`; each event is `event: <name>\ndata: <json>\n\n`; heartbeat comment `: ping` every 15s; a stream always ends with exactly one terminal event (`done` | `error` for chat, none needed for the subject stream which stays open until the client closes).
+- **Origin guard**: mutating requests (POST/PUT/PATCH/DELETE) that carry an `Origin` or `Sec-Fetch-Site` header are rejected `403` unless `Origin: http://127.0.0.1:5173` or `Sec-Fetch-Site: same-origin|none` (drive-by/CSRF guard; header-absent clients like curl are unaffected).
 - Never-streamed errors (headers not yet sent) are plain JSON errors with the status codes from the table at the bottom.
 
 ## Common types
@@ -24,7 +25,7 @@ type ErrorCode =
   | "VALIDATION" | "SUBJECT_NOT_FOUND" | "NAME_TAKEN" | "PATH_NOT_FOUND"
   | "FILE_NOT_FOUND" | "UNSUPPORTED_FILE_TYPE" | "PATH_TRAVERSAL"
   | "JOB_NOT_FOUND" | "JOB_CONFLICT" | "JOB_NOT_CANCELLABLE"
-  | "SESSION_NOT_FOUND" | "SESSION_GONE" | "OPENCODE_DOWN"
+  | "SESSION_NOT_FOUND" | "SESSION_GONE" | "TURN_IN_PROGRESS" | "OPENCODE_DOWN"
   | "QUESTION_NOT_FOUND" | "KEY_NOT_VERIFIED" | "INTERNAL";
 
 interface Subject {
@@ -145,7 +146,7 @@ No files are copied or moved (AC1).
 `GET /api/subjects/:id/graph/report`
 → `200 { graphReport: string | null; verifyReport: string | null }` (contents of GRAPH_REPORT.md / VERIFY_REPORT.md)
 
-`GET /api/subjects/:id/graph/raw/{*path}` — raw file passthrough confined to `graphify-out/` (serves `graph.html` + its assets to the iframe).
+`GET /api/subjects/:id/graph/raw/{*path}` — raw file passthrough confined to `graphify-out/` (serves `graph.html` + its assets to the iframe). Scriptable responses (`text/html`, `text/javascript`, `image/svg+xml`) carry `content-disposition: attachment` so a directly-opened URL cannot script the API origin.
 → `200 <raw file, content-type by extension>` · `404 FILE_NOT_FOUND` · `400 PATH_TRAVERSAL`
 
 `GET /api/subjects/:id/wiki` — list pages (graphify-generated, in `graphify-out/wiki/`).
@@ -196,7 +197,7 @@ Stream events:
 - `event: done` → `{ messageCount: number }` (terminal)
 - `event: error` → `ApiError` (terminal)
 
-Pre-stream JSON errors (before any SSE byte): `400 VALIDATION` · `404 SESSION_NOT_FOUND` · `410 SESSION_GONE` · `503 OPENCODE_DOWN`.
+Pre-stream JSON errors (before any SSE byte): `400 VALIDATION` · `404 SESSION_NOT_FOUND` · `409 TURN_IN_PROGRESS` (a turn is already running on this session — second tab) · `410 SESSION_GONE` · `503 OPENCODE_DOWN`.
 
 ### Practice
 
@@ -231,7 +232,7 @@ Pre-stream JSON errors (before any SSE byte): `400 VALIDATION` · `404 SESSION_N
 |---|---|
 | VALIDATION, PATH_NOT_FOUND, PATH_TRAVERSAL | 400 |
 | SUBJECT_NOT_FOUND, FILE_NOT_FOUND, JOB_NOT_FOUND, SESSION_NOT_FOUND, QUESTION_NOT_FOUND | 404 |
-| NAME_TAKEN, JOB_CONFLICT, JOB_NOT_CANCELLABLE, KEY_NOT_VERIFIED | 409 |
+| NAME_TAKEN, JOB_CONFLICT, JOB_NOT_CANCELLABLE, KEY_NOT_VERIFIED, TURN_IN_PROGRESS | 409 |
 | SESSION_GONE | 410 |
 | UNSUPPORTED_FILE_TYPE | 415 |
 | OPENCODE_DOWN | 503 |

@@ -3,7 +3,6 @@ import { ensureLayout, syncTeacherAgent } from './fs/layout.js';
 import { listSubjects } from './db/repos/subjects.js';
 
 const { app, ctx } = buildApp();
-
 // resync the canonical teacher agent file into every registered subject
 for (const subject of listSubjects(ctx.db)) {
   try {
@@ -19,6 +18,8 @@ await ctx.oc.boot().catch(() => undefined);
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, () => {
+    // kill running job child trees before the opencode manager goes down
+    ctx.queue.drain();
     void app
       .close()
       .then(() => ctx.oc.stop())

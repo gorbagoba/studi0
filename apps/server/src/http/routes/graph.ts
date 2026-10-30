@@ -71,9 +71,12 @@ export async function registerGraphRoutes(app: FastifyInstance, ctx: Ctx): Promi
     const ext = path.extname(abs).toLowerCase();
     const s = await stat(abs);
     if (s.isDirectory()) throw new HttpError('FILE_NOT_FOUND', `file not found: ${rel}`);
-    return reply
-      .type(CONTENT_TYPES[ext] ?? 'application/octet-stream')
-      .send(await readFile(abs));
+    const type = CONTENT_TYPES[ext] ?? 'application/octet-stream';
+    // scriptable types are forced to download: a directly-opened URL must not script the API origin
+    if (type === 'text/html' || type === 'text/javascript' || type === 'image/svg+xml') {
+      reply.header('content-disposition', `attachment; filename="${path.basename(abs)}"`);
+    }
+    return reply.type(type).send(await readFile(abs));
   });
 
   app.get('/api/subjects/:id/wiki', async (req) => {

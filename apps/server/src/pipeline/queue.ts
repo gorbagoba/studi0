@@ -104,6 +104,7 @@ export class JobQueue {
         status: finalStatus,
         partial_json: outcome.partial ? JSON.stringify(outcome.partial) : null,
         error: outcome.error,
+        pid: null,
         finished_at: new Date().toISOString(),
       }) as jobsRepo.JobRow;
     } catch (e) {
@@ -111,6 +112,7 @@ export class JobQueue {
       row = jobsRepo.updateJob(this.db, jobId, {
         status: controller.signal.aborted ? 'cancelled' : 'failed',
         error: controller.signal.aborted ? null : msg,
+        pid: null,
         finished_at: new Date().toISOString(),
       }) as jobsRepo.JobRow;
     } finally {
@@ -122,6 +124,11 @@ export class JobQueue {
       this.running.delete(jobId);
       this.pump();
     }
+  }
+
+  /** SIGINT path: abort every live job so the runners' abort listeners kill their child trees. */
+  drain(): void {
+    for (const controller of this.controllers.values()) controller.abort();
   }
 
   cancel(jobId: string): Job {

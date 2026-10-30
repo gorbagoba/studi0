@@ -24,6 +24,7 @@ export function GraphView({ subjectId, version }: { subjectId: ID; version: numb
         key={g.lastBuiltAt ?? 'none'}
         title="Interactive knowledge graph"
         className="graph-frame"
+        sandbox="allow-scripts"
         src={`/api/subjects/${subjectId}/graph/raw/graph.html`}
       />
     </section>

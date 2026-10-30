@@ -1,5 +1,5 @@
 import type { Config } from '../config.js';
-import { spawnArgs, resolveOpencodeBin } from './proc.js';
+import { spawnArgs, resolveOpencodeBin, killTreeWithDeadline } from './proc.js';
 
 export type OneshotFn = (cwd: string, prompt: string, signal?: AbortSignal) => Promise<string>;
 
@@ -18,22 +18,27 @@ export const makeOneshot =
       throw err;
     }
     const { done, child } = spawnArgs(['run', '--auto', prompt], cwd);
-    const abort = () => {
-      if (child.pid !== undefined) child.kill();
+    // same kill semantics as the pipeline runner: the tree, not just the child
+    const kill = () => {
+      if (child.pid !== undefined) killTreeWithDeadline(child.pid);
+      else child.kill();
     };
-    signal?.addEventListener('abort', abort, { once: true });
+    signal?.addEventListener('abort', kill, { once: true });
     const timer = setTimeout(() => {
-      if (child.pid !== undefined && child.exitCode === null) child.kill();
+      if (child.exitCode === null) kill();
     }, cfg.oneshotTimeoutMs);
     timer.unref();
     try {
       const res = await done;
       if (res.code !== 0) {
-        throw new Error(`opencode run failed (${res.code}): ${res.stderr.slice(-2000) || 'no stderr'}`);
+        // stderr tail stays in server logs — clients only get a generic message
+        const tail = res.stderr.split(/\r?\n/).filter(Boolean).slice(-3).join(' | ');
+        console.error(`[oneshot] opencode run failed (${res.code}): ${tail || 'no stderr'}`);
+        throw new Error(`opencode run failed (${res.code})`);
       }
       return res.stdout;
     } finally {
-      signal?.removeEventListener('abort', abort);
+      signal?.removeEventListener('abort', kill);
       clearTimeout(timer);
     }
   };

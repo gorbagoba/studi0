@@ -12,6 +12,8 @@ import { HttpError } from '../../util/errors.js';
 
 export async function registerChatRoutes(app: FastifyInstance, ctx: Ctx): Promise<void> {
   const { db, oc, events, cfg } = ctx;
+  // one turn per session at a time: two tabs double-pump the SSE stream and double-deposit
+  const inFlight = new Set<string>();
 
   app.get('/api/subjects/:id/chat/sessions', async (req) => {
     const subject = requireSubject(db, (req.params as { id: string }).id);
@@ -56,6 +58,10 @@ export async function registerChatRoutes(app: FastifyInstance, ctx: Ctx): Promis
       throw new HttpError('FILE_NOT_FOUND', `lesson ${body.lessonId} not found`);
     }
     oc.ensureUp(); // pre-stream errors stay JSON
+    if (inFlight.has(session.id)) {
+      throw new HttpError('TURN_IN_PROGRESS', 'a turn is already running for this session');
+    }
+    inFlight.add(session.id);
     const send = sseReply(reply, cfg);
     try {
       await streamTurn(
@@ -67,6 +73,7 @@ export async function registerChatRoutes(app: FastifyInstance, ctx: Ctx): Promis
         send,
       );
     } finally {
+      inFlight.delete(session.id);
       // the chat stream is always terminated by exactly one terminal event
       reply.raw.end();
     }

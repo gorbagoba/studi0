@@ -120,6 +120,17 @@ export function updateJob(db: Db, id: string, patch: JobPatch): JobRow | null {
   return getJob(db, id);
 }
 
+/** Boot cleanup: pids of jobs left running/cancelling by a server restart (kill their trees before closing the rows). */
+export function staleRunningPids(db: Db): string[] {
+  return (
+    db
+      .prepare(
+        `SELECT pid FROM jobs WHERE status IN ('running','cancelling') AND pid IS NOT NULL`,
+      )
+      .all() as unknown as { pid: string }[]
+  ).map((r) => r.pid);
+}
+
 /** Boot cleanup: jobs left running/cancelling by a server restart are closed as failed. */
 export function closeStaleRunning(db: Db): number {
   const res = db

@@ -121,14 +121,11 @@ export async function streamTurn(
       feedQuestions(subject, row);
     }
 
-    // quiz blocks in the assistant's reply join the same bank (AC18)
+    // quiz blocks in the latest assistant reply only — scanning the whole
+    // history would re-deposit older ```studi0-quiz``` blocks every turn (AC18)
     const history = await fetchHistory(client, session.oc_session_id);
-    const assistantText = [...history]
-      .reverse()
-      .filter((m) => m.role === 'assistant')
-      .map((m) => m.text)
-      .join('\n\n');
-    for (const spec of extractQuizBlocks(assistantText)) {
+    const lastAssistant = [...history].reverse().find((m) => m.role === 'assistant');
+    for (const spec of extractQuizBlocks(lastAssistant?.text ?? '')) {
       const questions = depositQuiz(db, subject.id, spec, lesson?.id ?? null);
       send('quiz', { questions });
       events.emit(subject.id, 'questions', { subjectId: subject.id, questions });
