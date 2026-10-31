@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useSubjects } from '../api/hooks';
+import { deleteSubject } from '../api/client';
 import { useApp } from '../state/app';
 import { AddSubjectDialog } from './AddSubjectDialog';
 import { Badge } from '../components/Badge';
@@ -9,6 +10,14 @@ export function Sidebar() {
   const { subjectId, selectSubject } = useApp();
   const subjects = useSubjects();
   const [addOpen, setAddOpen] = useState(false);
+
+  async function onDelete(name: string, id: string) {
+    // unregister only — server never touches the files on disk
+    if (!window.confirm(`Remove "${name}" from studi0? Your files on disk are NOT deleted.`)) return;
+    await deleteSubject(id);
+    if (id === subjectId) selectSubject(null);
+    subjects.reload();
+  }
 
   return (
     <aside className="sidebar">
@@ -20,7 +29,7 @@ export function Sidebar() {
         {subjects.data !== null && subjects.data.length > 0 ? (
           <ul className="subject-list">
             {subjects.data.map((s) => (
-              <li key={s.id}>
+              <li key={s.id} className="subject-row">
                 <button
                   className={`subject-item${s.id === subjectId ? ' active' : ''}`}
                   aria-current={s.id === subjectId || undefined}
@@ -28,6 +37,15 @@ export function Sidebar() {
                 >
                   <span>{s.name}</span>
                   {s.stale && <Badge tone="warn">stale</Badge>}
+                </button>
+                <button
+                  type="button"
+                  className="subject-delete"
+                  aria-label={`Delete ${s.name}`}
+                  title="Remove from studi0 (files on disk are kept)"
+                  onClick={() => onDelete(s.name, s.id)}
+                >
+                  ✕
                 </button>
               </li>
             ))}

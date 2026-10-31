@@ -8,15 +8,53 @@
   --accent: #0b57d0;
   --accent-ink: #ffffff;
   --accent-bg: #eef3fc;
+  --accent-line: #c5d5f2;
+  --accent-strong: #1c4d8f;
   --ok: #14532d;
   --ok-bg: #e8f5ec;
+  --ok-line: #a8d5b5;
   --warn: #6b4a00;
   --warn-bg: #fff8e6;
+  --warn-line: #e6c680;
   --err: #8c1d18;
   --err-bg: #fdecea;
+  --err-line: #f2b8b5;
+  --danger: #c62828;
+  --danger-ink: #ffffff;
+  --code-bg: #f1f3f5;
+  --badge-bg: #f1f1f1;
+  --track: #e5e5e5;
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-size: 15px;
   line-height: 1.5;
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #16181d;
+  --panel: #1e2228;
+  --ink: #e8eaed;
+  --muted: #9aa0a6;
+  --line: #33383f;
+  --accent: #8ab4f8;
+  --accent-ink: #0a2540;
+  --accent-bg: #243447;
+  --accent-line: #3f5f8f;
+  --accent-strong: #a8c7fa;
+  --ok: #7fc99a;
+  --ok-bg: #1d2f23;
+  --ok-line: #2f5a3d;
+  --warn: #e5c268;
+  --warn-bg: #33290f;
+  --warn-line: #5f4d1e;
+  --err: #f2a19c;
+  --err-bg: #3a201e;
+  --err-line: #6b3a36;
+  --danger: #d84a42;
+  --danger-ink: #ffffff;
+  --code-bg: #242930;
+  --badge-bg: #2a2f36;
+  --track: #33383f;
 }
 
 * {
@@ -42,7 +80,7 @@ p {
 }
 
 code {
-  background: #f1f3f5;
+  background: var(--code-bg);
   padding: 0 0.3rem;
   border-radius: 4px;
   font-size: 0.85em;
@@ -139,6 +177,7 @@ code {
   align-items: center;
   gap: 0.6rem;
   flex-wrap: wrap;
+  padding-right: 4rem;
 }
 
 .page-header h2 {
@@ -219,9 +258,9 @@ code {
 }
 
 .btn-danger {
-  background: #c62828;
-  border-color: #c62828;
-  color: #fff;
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--danger-ink);
 }
 
 .btn:disabled,
@@ -251,7 +290,7 @@ textarea {
   padding: 0.4rem 0.5rem;
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: #fff;
+  background: var(--panel);
   color: var(--ink);
 }
 
@@ -303,7 +342,7 @@ fieldset {
   border-radius: 999px;
   font-size: 0.75rem;
   border: 1px solid var(--line);
-  background: #f1f1f1;
+  background: var(--badge-bg);
   color: var(--muted);
   white-space: nowrap;
 }
@@ -339,11 +378,11 @@ fieldset {
   display: inline-block;
   font-size: 0.78rem;
   background: var(--accent-bg);
-  border: 1px solid #c5d5f2;
+  border: 1px solid var(--accent-line);
   border-radius: 4px;
   padding: 0 0.35rem;
   margin: 0 0.1rem;
-  color: #1c4d8f;
+  color: var(--accent-strong);
 }
 
 .banner {
@@ -359,19 +398,19 @@ fieldset {
 
 .banner-error {
   background: var(--err-bg);
-  border: 1px solid #f2b8b5;
+  border: 1px solid var(--err-line);
   color: var(--err);
 }
 
 .banner-warn {
   background: var(--warn-bg);
-  border: 1px solid #e6c680;
+  border: 1px solid var(--warn-line);
   color: var(--warn);
 }
 
 .banner-ok {
   background: var(--ok-bg);
-  border: 1px solid #a8d5b5;
+  border: 1px solid var(--ok-line);
   color: var(--ok);
 }
 
@@ -395,6 +434,40 @@ fieldset {
 .empty-hint {
   margin: 0;
   font-size: 0.9rem;
+}
+
+.subject-row {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.subject-row .subject-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.subject-delete {
+  font: inherit;
+  font-size: 0.8rem;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0 0.45rem;
+}
+
+.subject-delete:hover {
+  color: var(--err);
+  background: var(--bg);
+}
+
+.theme-toggle {
+  position: fixed;
+  top: 0.7rem;
+  right: 0.8rem;
+  z-index: 10;
 }
 
 /* ---- upload ---- */
@@ -433,14 +506,14 @@ fieldset {
 
 .file-table td {
   padding: 0.35rem 0.5rem;
-  border-bottom: 1px solid #ececec;
+  border-bottom: 1px solid var(--line);
 }
 
 /* ---- progress ---- */
 
 .progress {
   height: 8px;
-  background: #e5e5e5;
+  background: var(--track);
   border-radius: 999px;
   overflow: hidden;
 }
@@ -457,14 +530,14 @@ fieldset {
   height: 60vh;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fff;
+  background: var(--panel);
 }
 
 .report-pre {
   max-height: 320px;
   overflow: auto;
   font-size: 0.8rem;
-  background: #f6f8fa;
+  background: var(--code-bg);
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 0.6rem;
@@ -542,7 +615,7 @@ fieldset {
   height: 72vh;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fff;
+  background: var(--panel);
 }
 
 /* ---- chat ---- */
@@ -689,7 +762,7 @@ fieldset {
 }
 
 .key-reveal {
-  background: #f6f8fa;
+  background: var(--code-bg);
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 0.6rem 0.8rem;
@@ -712,7 +785,7 @@ fieldset {
   align-items: center;
   gap: 0.75rem;
   padding: 0.5rem 0;
-  border-bottom: 1px solid #ececec;
+  border-bottom: 1px solid var(--line);
 }
 
 .bank-meta {

@@ -70,7 +70,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-function send<T>(method: 'POST' | 'PUT', path: string, body?: unknown): Promise<T> {
+function send<T>(method: 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
   return api<T>(path, {
     method,
     // bodyless POSTs must not carry a JSON content-type — Fastify rejects empty JSON bodies
@@ -85,6 +85,9 @@ export const getSubjects = (): Promise<Subject[]> => api<Subject[]>('/api/subjec
 
 export const createSubject = (body: { name: string; path?: string }): Promise<SubjectDetail> =>
   send<SubjectDetail>('POST', '/api/subjects', body);
+
+// unregister only — the subject's files on disk are never touched
+export const deleteSubject = (id: ID): Promise<void> => send<void>('DELETE', `/api/subjects/${id}`);
 
 export const getSubject = (id: ID): Promise<SubjectDetail> =>
   api<SubjectDetail>(`/api/subjects/${id}`);

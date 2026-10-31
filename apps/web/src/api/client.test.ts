@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, api, cancelJob, startJob } from './client';
+import { ApiError, api, cancelJob, deleteSubject, startJob } from './client';
 
 describe('api client', () => {
   afterEach(() => {
@@ -42,6 +42,18 @@ describe('api client', () => {
     await cancelJob('j1');
     expect(fetchMock).toHaveBeenCalledOnce();
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.body).toBeUndefined();
+    expect(new Headers(init.headers).has('content-type')).toBe(false);
+  });
+
+  it('sends deleteSubject as bodyless DELETE without content-type', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await deleteSubject('s1');
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('/api/subjects/s1');
+    expect(init.method).toBe('DELETE');
     expect(init.body).toBeUndefined();
     expect(new Headers(init.headers).has('content-type')).toBe(false);
   });
