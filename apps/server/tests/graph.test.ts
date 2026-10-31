@@ -43,6 +43,24 @@ describe('graph / wiki / corrections / lessons (T05)', () => {
     expect(report.verifyReport).toContain('Flagged');
   });
 
+  it('serves the build log tail, null when absent', async () => {
+    h = await makeHarness();
+    const { id, root } = await createSubject('G3');
+    let res = await h.app.inject({ method: 'GET', url: `/api/subjects/${id}/graph/log` });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().log).toBeNull();
+
+    await mkdir(path.join(root, 'graphify-out'), { recursive: true });
+    const lines = Array.from({ length: 320 }, (_, i) => `[T+${i}s] line ${i}`);
+    await writeFile(path.join(root, 'graphify-out', 'build.log'), lines.join('\n') + '\n');
+    res = await h.app.inject({ method: 'GET', url: `/api/subjects/${id}/graph/log` });
+    expect(res.statusCode).toBe(200);
+    const log = res.json().log as string;
+    // 320 lines + trailing newline = 321 split entries; last 300 start at line 21
+    expect(log.split('\n')[0]).toBe('[T+21s] line 21');
+    expect(log).toContain('[T+319s] line 319');
+  });
+
   it('raw passthrough serves graphify-out files and refuses traversal', async () => {
     h = await makeHarness();
     const { id, root } = await createSubject('G2');

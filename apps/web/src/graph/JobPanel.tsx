@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ID, Job, JobKind, JobStatus } from '@studi0/shared';
-import { cancelJob, displayError, startJob } from '../api/client';
+import { cancelJob, displayError, getBuildLog, startJob } from '../api/client';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { ProgressBar } from '../components/ProgressBar';
 
@@ -77,7 +77,49 @@ export function JobPanel({
         )}
       </div>
       {job !== null && <JobStatus job={job} />}
+      <BuildLog subjectId={subjectId} active={active} jobId={job?.id ?? null} />
     </section>
+  );
+}
+
+/** Live-tailing view of graphify-out/build.log — also shows the previous build's log after a crash. */
+function BuildLog({ subjectId, active, jobId }: { subjectId: ID; active: boolean; jobId: string | null }) {
+  const [log, setLog] = useState<string | null>(null);
+  const preRef = useRef<HTMLPreElement>(null);
+
+  useEffect(() => {
+    let stopped = false;
+    const tick = async () => {
+      try {
+        const r = await getBuildLog(subjectId);
+        if (!stopped) setLog(r.log);
+      } catch {
+        // the log pane is best-effort — never surface fetch errors here
+      }
+    };
+    void tick();
+    if (!active) return () => {
+      stopped = true;
+    };
+    const iv = setInterval(() => void tick(), 2500);
+    return () => {
+      stopped = true;
+      clearInterval(iv);
+    };
+  }, [subjectId, active, jobId]);
+
+  useEffect(() => {
+    if (preRef.current) preRef.current.scrollTop = preRef.current.scrollHeight;
+  }, [log]);
+
+  if (log === null) return null;
+  return (
+    <details className="build-log" open={active}>
+      <summary>Build log</summary>
+      <pre ref={preRef} aria-live="polite" aria-label="Graph pipeline log">
+        {log}
+      </pre>
+    </details>
   );
 }
 

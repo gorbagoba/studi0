@@ -89,6 +89,9 @@ export const createSubject = (body: { name: string; path?: string }): Promise<Su
 // unregister only — the subject's files on disk are never touched
 export const deleteSubject = (id: ID): Promise<void> => send<void>('DELETE', `/api/subjects/${id}`);
 
+export const getBuildLog = (id: ID): Promise<{ log: string | null }> =>
+  api<{ log: string | null }>(`/api/subjects/${id}/graph/log`);
+
 export const getSubject = (id: ID): Promise<SubjectDetail> =>
   api<SubjectDetail>(`/api/subjects/${id}`);
 

@@ -15,6 +15,7 @@ import {
   writeCorrections,
 } from '../../graph/wiki.js';
 import { safeResolve } from '../../fs/paths.js';
+import { buildLogPath } from '../../pipeline/buildLog.js';
 import { HttpError } from '../../util/errors.js';
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -79,6 +80,14 @@ export async function registerGraphRoutes(app: FastifyInstance, ctx: Ctx): Promi
       reply.header('content-security-policy', 'sandbox allow-scripts');
     }
     return reply.type(type).send(await readFile(abs));
+  });
+
+  app.get('/api/subjects/:id/graph/log', async (req) => {
+    const subject = requireSubject(db, (req.params as { id: string }).id);
+    const abs = buildLogPath(subject.path);
+    if (!existsSync(abs)) return { log: null };
+    const content = await readFile(abs, 'utf8');
+    return { log: content.split(/\r?\n/).slice(-300).join('\n') };
   });
 
   app.get('/api/subjects/:id/wiki', async (req) => {

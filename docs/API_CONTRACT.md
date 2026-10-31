@@ -146,8 +146,11 @@ No files are copied or moved (AC1).
 `GET /api/subjects/:id/graph/report`
 → `200 { graphReport: string | null; verifyReport: string | null }` (contents of GRAPH_REPORT.md / VERIFY_REPORT.md)
 
-`GET /api/subjects/:id/graph/raw/{*path}` — raw file passthrough confined to `graphify-out/` (serves `graph.html` + its assets to the iframe). Scriptable responses (`text/html`, `text/javascript`, `image/svg+xml`) carry `content-disposition: attachment` so a directly-opened URL cannot script the API origin.
+`GET /api/subjects/:id/graph/raw/{*path}` — raw file passthrough confined to `graphify-out/` (serves `graph.html` + its assets to the iframe). Scriptable responses (`text/html`, `text/javascript`, `image/svg+xml`) carry `content-security-policy: sandbox allow-scripts` — the document runs in an opaque origin (direct opens / cross-site embeds cannot script the API origin) while the app's sandboxed iframe renders it.
 → `200 <raw file, content-type by extension>` · `404 FILE_NOT_FOUND` · `400 PATH_TRAVERSAL`
+
+`GET /api/subjects/:id/graph/log` — tail (last 300 lines) of the pipeline build log (`graphify-out/build.log`), written by the runner with relative timestamps for every protocol/raw output line.
+→ `200 { log: string | null }`
 
 `GET /api/subjects/:id/wiki` — list pages (graphify-generated, in `graphify-out/wiki/`).
 → `200 { pages: { name: string; updatedAt: ISO }[] }`
