@@ -32,7 +32,7 @@ export function computeStats(db: Db, subjectId: string, nowIso: string): Stats {
 }
 
 /** Consecutive days ending today or yesterday with ≥1 attempt. */
-export function computeStreak(createdAts: string[]): number {
+function computeStreak(createdAts: string[]): number {
   const days = new Set(
     createdAts.map((iso) => localDay(new Date(iso))),
   );

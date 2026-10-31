@@ -23,5 +23,4 @@ export const rotatedEventSchema = z.object({
 export const doneEventSchema = z.object({ messageCount: z.number().int() });
 export const chatErrorEventSchema = apiErrorPayloadSchema;
 
-export const subjectQuestionsEventSchema = questionsEventSchema;
 export type SubjectQuestionsEvent = QuestionsEvent;

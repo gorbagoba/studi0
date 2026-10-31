@@ -18,7 +18,7 @@ export async function safeWriteFile(filePath: string, data: string | Uint8Array)
   }
 }
 
-export async function renameWithRetry(from: string, to: string): Promise<void> {
+async function renameWithRetry(from: string, to: string): Promise<void> {
   try {
     await rename(from, to);
   } catch {

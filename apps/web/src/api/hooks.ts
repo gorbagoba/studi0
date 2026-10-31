@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import type {
-  ChatSession,
   GraphInfo,
   GraphReport,
   ID,
@@ -23,7 +22,7 @@ export interface FetchState<T> {
 }
 
 /** Small fetch hook; refetches when `deps` change or `reload()` is called (SSE-driven invalidation). */
-export function useFetch<T>(
+function useFetch<T>(
   fetcher: () => Promise<T>,
   deps: readonly unknown[],
 ): FetchState<T> & { reload: () => void } {
@@ -113,9 +112,6 @@ export const useDue = (id: ID, version: number): FetchState<DueState> & { reload
 
 export const useStats = (id: ID, version: number): FetchState<Stats> & { reload: () => void } =>
   useFetch(() => client.getStats(id), [id, version]);
-
-export const useSessions = (id: ID): FetchState<ChatSession[]> & { reload: () => void } =>
-  useFetch(() => client.getSessions(id), [id]);
 
 export type QuestionTypeFilter = 'mcq' | 'short' | 'code';
 export type DueState = { date: string; questions: Question[] };

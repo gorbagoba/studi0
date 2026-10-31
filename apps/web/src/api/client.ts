@@ -9,7 +9,6 @@ import type {
   GenerateQuestionsRequest,
   GraphInfo,
   GraphReport,
-  Health,
   ID,
   Job,
   JobKind,
@@ -79,10 +78,6 @@ function send<T>(method: 'POST' | 'PUT', path: string, body?: unknown): Promise<
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 }
-
-// ---- health ----
-
-export const getHealth = (): Promise<Health> => api<Health>('/api/health');
 
 // ---- subjects ----
 

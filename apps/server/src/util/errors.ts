@@ -1,6 +1,6 @@
 import type { ErrorCode } from '@studi0/shared';
 
-export const statusForCode: Record<ErrorCode, number> = {
+const statusForCode: Record<ErrorCode, number> = {
   VALIDATION: 400,
   PATH_NOT_FOUND: 400,
   PATH_TRAVERSAL: 400,

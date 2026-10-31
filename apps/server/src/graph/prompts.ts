@@ -1,4 +1,4 @@
-export const ONTOLOGY = {
+const ONTOLOGY = {
   entities: ['Concept', 'Algorithm', 'DataStructure', 'Proof', 'Pitfall', 'ExamNote'],
   relations: ['prerequisite_of', 'uses', 'confused_with', 'contradicts'],
 } as const;

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { safeWriteFile } from './safeWrite.js';
 
-export const SUBJECT_DIRS = [
+const SUBJECT_DIRS = [
   'material',
   'lessons',
   'reference',
@@ -62,11 +62,4 @@ async function walk(dir: string, on: (abs: string) => void): Promise<void> {
     if (entry.isDirectory()) await walk(abs, on);
     else if (entry.isFile()) on(abs);
   }
-}
-
-/** Read a canonical agent file source (used by tests to assert sync). */
-export async function readCanonicalAgent(name = 'studi0-teacher.md'): Promise<string | null> {
-  const src = path.join(agentDir, name);
-  if (!existsSync(src)) return null;
-  return readFile(src, 'utf8');
 }

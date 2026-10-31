@@ -119,7 +119,7 @@ export async function listSubjectDtos(db: Db): Promise<Subject[]> {
   return Promise.all(rows.map(async (row) => subjectToDto(row, await computeStale(row))));
 }
 
-export async function maxMaterialMtime(subjectRoot: string): Promise<string | null> {
+async function maxMaterialMtime(subjectRoot: string): Promise<string | null> {
   const materialDir = path.join(subjectRoot, 'material');
   if (!existsSync(materialDir)) return null;
   let max: string | null = null;

@@ -2,7 +2,6 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { buildApp, type BuiltApp } from '../src/http/app.js';
-import type { Ctx } from '../src/context.js';
 
 export interface TestHarness extends BuiltApp {
   dataDir: string;
@@ -31,5 +30,3 @@ export async function makeHarness(
     },
   };
 }
-
-export type AnyCtx = Ctx;

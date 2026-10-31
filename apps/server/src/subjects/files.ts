@@ -11,7 +11,7 @@ import { HttpError } from '../util/errors.js';
 import type { FileEntry, TreeDir } from '@studi0/shared';
 import type { SubjectRow } from '../db/repos/subjects.js';
 
-export const TREE_ROOTS: TreeDir[] = ['material', 'lessons', 'reference', 'graphify-out'];
+const TREE_ROOTS: TreeDir[] = ['material', 'lessons', 'reference', 'graphify-out'];
 
 function toEntry(subjectRoot: string, abs: string, isDir: boolean): FileEntry {
   const rel = path.relative(subjectRoot, abs).replaceAll('\\', '/');
@@ -53,7 +53,7 @@ export async function listTree(subject: SubjectRow, dirParam?: string) {
 }
 
 /** Resolve a collision-free destination for an uploaded basename. */
-export function uploadTarget(subject: SubjectRow, filename: string): { abs: string; rel: string } {
+function uploadTarget(subject: SubjectRow, filename: string): { abs: string; rel: string } {
   const name = sanitizeName(filename);
   const ext = path.extname(name);
   const stem = name.slice(0, name.length - ext.length) || 'file';
