@@ -86,6 +86,13 @@ export function buildApp(opts: { dataDir?: string; dbPath?: string } = {}): Buil
         .status(413)
         .send({ error: { code: 'VALIDATION', message: 'request body too large' } });
     }
+    // malformed/empty JSON bodies are client mistakes, not server faults
+    const fstCode = (error as { code?: unknown }).code;
+    if (typeof fstCode === 'string' && fstCode.startsWith('FST_ERR_CTP_')) {
+      return reply
+        .status(400)
+        .send({ error: { code: 'VALIDATION', message: 'malformed request body' } });
+    }
     req.log.error(error);
     return reply
       .status(500)

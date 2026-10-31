@@ -45,6 +45,17 @@ describe('subjects CRUD (T03)', () => {
       'utf8',
     );
     expect(synced).toBe(canonical);
+    // pipeline agent synced alongside the teacher agent
+    const pipelineSynced = await readFile(
+      path.join(courseDir, '.opencode', 'agents', 'studi0-pipeline.md'),
+      'utf8',
+    );
+    expect(pipelineSynced).toBe(
+      await readFile(
+        path.resolve(import.meta.dirname, '../src/../agents/studi0-pipeline.md'),
+        'utf8',
+      ),
+    );
     await rm(courseDir, { recursive: true, force: true });
   });
 

@@ -1,7 +1,7 @@
 import * as chatRepo from '../db/repos/chat.js';
 import * as jobsRepo from '../db/repos/jobs.js';
 import * as lessonsRepo from '../db/repos/lessons.js';
-import { maybeRotate, fetchHistory } from './sessions.js';
+import { maybeRotate, fetchHistory, stripStepMarkers } from './sessions.js';
 import { detectAndIndexLessons, snapshotLessons } from './lessons.js';
 import { extractQuizBlocks, depositQuiz } from './quizScan.js';
 import type { Db } from '../db/index.js';
@@ -74,13 +74,25 @@ export async function streamTurn(
     });
 
     const pump = (async () => {
+      // opencode 2.2.1 emits no session.idle: the turn lifecycle is
+      // execution.started → execution.succeeded/failed (probed live)
       const stream = client.event.subscribe({
-        types: ['session.text.delta', 'session.idle', 'session.execution.failed', 'permission.asked'],
+        types: [
+          'session.text.delta',
+          'session.execution.succeeded',
+          'session.execution.failed',
+          'permission.asked',
+        ],
       });
       for await (const event of stream) {
         if (event.type === 'session.text.delta' && event.data.sessionID === session.oc_session_id) {
-          send('token', { text: event.data.delta });
-        } else if (event.type === 'session.idle' && event.data.sessionID === session.oc_session_id) {
+          // opencode step markers (§N§) are not content — strip before emitting
+          const text = stripStepMarkers(event.data.delta);
+          if (text) send('token', { text });
+        } else if (
+          event.type === 'session.execution.succeeded' &&
+          event.data.sessionID === session.oc_session_id
+        ) {
           resolveIdle('idle');
           break;
         } else if (

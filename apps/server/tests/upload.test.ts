@@ -73,7 +73,10 @@ describe('batch upload (T03 / AC2)', () => {
     ]);
     const res = await h.app.inject({ method: 'POST', url: `/api/subjects/${id}/files`, ...b });
     expect(res.statusCode).toBe(415);
-    expect(res.json().rejected.length).toBe(2);
+    const body = res.json();
+    expect(body.error.code).toBe('UNSUPPORTED_FILE_TYPE');
+    expect(body.error.details.rejected).toHaveLength(2);
+    expect(body.error.message).toContain('unsupported type');
   });
 
   it('sanitizes dangerous names and suffixes collisions', async () => {

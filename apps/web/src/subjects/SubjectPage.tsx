@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ID, Job } from '@studi0/shared';
+import type { ID, Job, JobStatus } from '@studi0/shared';
 import { openSubjectEvents } from '../api/sse';
 import { useSubject } from '../api/hooks';
 import { useApp } from '../state/app';
@@ -25,6 +25,17 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'chat', label: 'Chat' },
   { id: 'practice', label: 'Practice' },
 ];
+
+// lifecycle order — a snapshot must never move backwards through it
+const JOB_STATUS_RANK: Record<JobStatus, number> = {
+  queued: 0,
+  running: 1,
+  cancelling: 2,
+  complete: 3,
+  partial: 3,
+  failed: 3,
+  cancelled: 3,
+};
 
 export function SubjectPage({ subjectId }: { subjectId: ID }) {
   const { tab, setTab, lessonPath, openLesson, closeLesson } = useApp();
@@ -100,7 +111,14 @@ export function SubjectPage({ subjectId }: { subjectId: ID }) {
                 job={job}
                 stale={s.stale}
                 onStarted={(j) => {
-                  setLiveJob(j);
+                  // the POST response can resolve after SSE already advanced the job — keep the newer snapshot
+                  setLiveJob((cur) =>
+                    cur !== null &&
+                    cur.id === j.id &&
+                    JOB_STATUS_RANK[cur.status] > JOB_STATUS_RANK[j.status]
+                      ? cur
+                      : j,
+                  );
                   subjectRef.current.reload();
                 }}
               />

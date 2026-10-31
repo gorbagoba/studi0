@@ -14,7 +14,7 @@ export async function registerFileRoutes(app: FastifyInstance, ctx: Ctx): Promis
     return listTree(subject, dir);
   });
 
-  app.post('/api/subjects/:id/files', async (req, reply) => {
+  app.post('/api/subjects/:id/files', async (req) => {
     const subject = requireSubject(db, (req.params as { id: string }).id);
     if (!req.isMultipart()) {
       throw new HttpError('VALIDATION', 'expected multipart/form-data with a "files" field');
@@ -36,9 +36,13 @@ export async function registerFileRoutes(app: FastifyInstance, ctx: Ctx): Promis
       else rejected.push({ name: part.filename, reason: outcome.reason });
     }
     if (!sawAny) throw new HttpError('VALIDATION', 'no files in request');
-    // 415 only when nothing at all was acceptable (contract)
+    // 415 only when nothing at all was acceptable (contract); envelope per error format
     if (accepted.length === 0) {
-      return reply.code(415).send({ accepted: [], rejected });
+      throw new HttpError(
+        'UNSUPPORTED_FILE_TYPE',
+        rejected.map((r) => `${r.name}: ${r.reason}`).join('; ') || 'no acceptable files',
+        { rejected },
+      );
     }
     return { accepted, rejected };
   });

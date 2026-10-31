@@ -5,3 +5,6 @@ coverage/
 data/
 graphify-out/
 .env
+qa-tmp/
+data-*/
+*.tmp.mjs

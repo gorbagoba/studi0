@@ -17,14 +17,9 @@ export const SUBJECT_DIRS = [
 
 const LAYOUT_FILES = ['corrections.md', 'MISSION.md', 'NOTES.md', 'RESOURCES.md'] as const;
 
-// canonical agent file: apps/server/agents/studi0-teacher.md
-const agentSourcePath = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '..',
-  '..',
-  'agents',
-  'studi0-teacher.md',
-);
+// canonical agent files: apps/server/agents/*.md
+const agentDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'agents');
+const AGENT_FILES = ['studi0-teacher.md', 'studi0-pipeline.md'] as const;
 
 /** Idempotently ensure the teach-workspace layout under a subject root. */
 export async function ensureLayout(subjectRoot: string): Promise<void> {
@@ -37,12 +32,14 @@ export async function ensureLayout(subjectRoot: string): Promise<void> {
   }
 }
 
-/** Sync the canonical teacher agent file into the subject (byte-identical overwrite). */
+/** Sync the canonical agent files into the subject (byte-identical overwrite). */
 export async function syncTeacherAgent(subjectRoot: string): Promise<void> {
-  if (!existsSync(agentSourcePath)) return;
-  const content = await readFile(agentSourcePath, 'utf8');
-  const dest = path.join(subjectRoot, '.opencode', 'agents', 'studi0-teacher.md');
-  await safeWriteFile(dest, content);
+  for (const name of AGENT_FILES) {
+    const src = path.join(agentDir, name);
+    if (!existsSync(src)) continue;
+    const content = await readFile(src, 'utf8');
+    await safeWriteFile(path.join(subjectRoot, '.opencode', 'agents', name), content);
+  }
 }
 
 /** Mirror existing material/ files into the files table (origin 'seed'). */
@@ -67,8 +64,9 @@ async function walk(dir: string, on: (abs: string) => void): Promise<void> {
   }
 }
 
-/** Read the canonical agent file source (used by tests to assert sync). */
-export async function readCanonicalAgent(): Promise<string | null> {
-  if (!existsSync(agentSourcePath)) return null;
-  return readFile(agentSourcePath, 'utf8');
+/** Read a canonical agent file source (used by tests to assert sync). */
+export async function readCanonicalAgent(name = 'studi0-teacher.md'): Promise<string | null> {
+  const src = path.join(agentDir, name);
+  if (!existsSync(src)) return null;
+  return readFile(src, 'utf8');
 }

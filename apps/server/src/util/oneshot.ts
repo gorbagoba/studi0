@@ -1,5 +1,5 @@
 import type { Config } from '../config.js';
-import { spawnArgs, resolveOpencodeBin, killTreeWithDeadline } from './proc.js';
+import { spawnArgs, resolveOpencodeBin, killTree, killTreeWithDeadline } from './proc.js';
 
 export type OneshotFn = (cwd: string, prompt: string, signal?: AbortSignal) => Promise<string>;
 
@@ -17,7 +17,8 @@ export const makeOneshot =
       (err as NodeJS.ErrnoException).name = 'OneshotDown';
       throw err;
     }
-    const { done, child } = spawnArgs(['run', '--auto', prompt], cwd);
+    // --standalone: private server inside the kill-tree (same as pipeline runner)
+    const { done, child } = spawnArgs(['run', '--auto', '--standalone', prompt], cwd);
     // same kill semantics as the pipeline runner: the tree, not just the child
     const kill = () => {
       if (child.pid !== undefined) killTreeWithDeadline(child.pid);
@@ -40,5 +41,7 @@ export const makeOneshot =
     } finally {
       signal?.removeEventListener('abort', kill);
       clearTimeout(timer);
+      // the direct child is gone; reap any descendants it outlived (best-effort)
+      if (child.pid !== undefined) void killTree(child.pid);
     }
   };

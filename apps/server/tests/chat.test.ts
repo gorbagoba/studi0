@@ -11,6 +11,8 @@ afterEach(async () => {
 
 function fakeClient(ocSessionId: string, opts: { tokens?: string[]; history?: { role: string; text: string }[] } = {}): OcClient {
   const history = opts.history ?? [];
+  // terminal event replayed from a live opencode 2.2.1 probe: the turn ends
+  // with session.execution.succeeded — session.idle does not exist in 2.2.1
   const events: V2Event[] = [
     ...(opts.tokens ?? []).map(
       (t) =>
@@ -19,7 +21,7 @@ function fakeClient(ocSessionId: string, opts: { tokens?: string[]; history?: { 
           data: { sessionID: ocSessionId, assistantMessageID: 'a1', ordinal: 0, delta: t },
         }) as unknown as V2Event,
     ),
-    { type: 'session.idle', data: { sessionID: ocSessionId } } as unknown as V2Event,
+    { type: 'session.execution.succeeded', data: { sessionID: ocSessionId } } as unknown as V2Event,
   ];
   return {
     session: {
@@ -210,7 +212,7 @@ describe('teacher chat (T06)', () => {
       event: {
         subscribe: async function* () {
           await gate;
-          yield { type: 'session.idle', data: { sessionID: 'oc-6' } };
+          yield { type: 'session.execution.succeeded', data: { sessionID: 'oc-6' } };
         },
       },
       permission: { reply: async () => undefined },
@@ -235,6 +237,26 @@ describe('teacher chat (T06)', () => {
     expect(second.json().error.code).toBe('TURN_IN_PROGRESS');
     release();
     expect((await first).statusCode).toBe(200);
+  });
+
+  it('strips opencode step markers from tokens (§N§ never reaches the client)', async () => {
+    h = await makeHarness();
+    const id = await createSubject('Chat7');
+    patchOc(h, fakeClient('oc-7', { tokens: ['§3§ ', 'Binary heaps §12§ are ', 'heaps.'] }));
+    const session = (
+      await h.app.inject({ method: 'POST', url: `/api/subjects/${id}/chat/sessions`, payload: {} })
+    ).json();
+    const res = await h.app.inject({
+      method: 'POST',
+      url: `/api/chat/sessions/${session.id}/messages`,
+      payload: { content: 'hi' },
+    });
+    expect(res.statusCode).toBe(200);
+    const text = [...res.body.matchAll(/event: token\ndata: (.+)/g)]
+      .map((m) => (JSON.parse(m[1]) as { text: string }).text)
+      .join('');
+    expect(text).toBe('Binary heaps are heaps.');
+    expect(text).not.toContain('\u00A7');
   });
 
   it('history: 404 unknown session, 410 when opencode lost it', async () => {

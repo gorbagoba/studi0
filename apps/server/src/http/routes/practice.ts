@@ -14,6 +14,7 @@ import * as attemptsRepo from '../../db/repos/attempts.js';
 import * as lessonsRepo from '../../db/repos/lessons.js';
 import { generateQuestions } from '../../practice/generate.js';
 import { verifyQuestionKey } from '../../practice/verifyKey.js';
+import { verifyKeysAndEmit } from '../../teacher/practiceFeed.js';
 import { gradeAnswer } from '../../practice/grade.js';
 import { nextSchedule } from '../../practice/scheduler.js';
 import { computeStats } from '../../practice/stats.js';
@@ -45,6 +46,8 @@ export async function registerPracticeRoutes(app: FastifyInstance, ctx: Ctx): Pr
       lessonId: body.lessonId ?? null,
       source: 'on_demand',
     });
+    // contract: verification runs right after, async; one `questions` SSE event when done
+    verifyKeysAndEmit(db, ctx.events, ctx.oneshot, subject, questions);
     return reply.code(201).send(questions);
   });
 

@@ -10,10 +10,10 @@ Ontology (fixed — every node MUST carry one entity type, every edge one relati
 `;
 
 const PROGRESS_PROTOCOL = `
-Progress protocol (mandatory): as graphify completes each file/chunk, print exactly one line to stdout:
-studi0-progress {"done":<n>,"total":<m>,"file":"<relative path>"}
-If a file/chunk fails, print exactly one line:
-studi0-failed {"file":"<relative path>","reason":"<short reason>"}
+Progress protocol (mandatory — the server parses these lines from your streamed reply text, so they must appear in your reply as plain lines while you work):
+- As soon as you know how many files will be processed, emit: studi0-progress {"done":0,"total":<m>,"file":null}
+- As each file/chunk completes, emit: studi0-progress {"done":<n>,"total":<m>,"file":"<relative path>"}
+If a file/chunk fails, emit: studi0-failed {"file":"<relative path>","reason":"<short reason>"}
 Never fake success for a failed file — report it and continue with the remaining files.
 `;
 

@@ -26,6 +26,12 @@ export async function createOcSession(
 }
 
 /** Proxy opencode messages into contract ChatMessage[]; throws SESSION_GONE. */
+// opencode step markers (§N§) are protocol artifacts, not content
+// shortcut: a marker split across two deltas leaks its fragment — rare, cosmetic
+export function stripStepMarkers(text: string): string {
+  return text.replace(/\u00A7\d+\u00A7\s?/g, '');
+}
+
 export async function fetchHistory(
   client: OcClient,
   ocSessionId: string,
@@ -50,10 +56,12 @@ export async function fetchHistory(
         createdAt: new Date(m.time.created).toISOString(),
       });
     } else if (m.type === 'assistant') {
-      const text = m.content
-        .filter((c) => c.type === 'text')
-        .map((c) => c.text)
-        .join('\n\n');
+      const text = stripStepMarkers(
+        m.content
+          .filter((c) => c.type === 'text')
+          .map((c) => c.text)
+          .join('\n\n'),
+      );
       if (text) {
         out.push({
           id: m.id,

@@ -62,10 +62,15 @@ export function spawnArgs(args: string[], cwd: string, env?: NodeJS.ProcessEnv):
     env: { ...process.env, ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+  // callers may setEncoding('utf8') on these streams, so chunks can arrive as
+  // strings — normalize before Buffer.concat or it throws ERR_INVALID_ARG_TYPE
+  // and takes down the whole server process (uncaught inside a 'data' handler)
   const stdout: Buffer[] = [];
   const stderr: Buffer[] = [];
-  child.stdout?.on('data', (d: Buffer) => stdout.push(d));
-  child.stderr?.on('data', (d: Buffer) => stderr.push(d));
+  const collect = (buf: Buffer[]) => (d: Buffer | string) =>
+    buf.push(typeof d === 'string' ? Buffer.from(d, 'utf8') : d);
+  child.stdout?.on('data', collect(stdout));
+  child.stderr?.on('data', collect(stderr));
   const done = new Promise<{ code: number | null; stdout: string; stderr: string }>(
     (resolveDone, rejectDone) => {
       child.on('error', rejectDone);
@@ -84,11 +89,10 @@ export function spawnArgs(args: string[], cwd: string, env?: NodeJS.ProcessEnv):
 /** Kill a process tree. Windows: taskkill /T /F (mandatory — children survive otherwise). */
 export async function killTree(pid: string | number, forceDelayMs = 5000): Promise<void> {
   if (isWin) {
-    await new Promise<void>((resolveKill) => {
-      execFile('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true }, () =>
-        resolveKill(),
-      );
-    });
+    // taskkill /T cannot reach descendants once the parent is already dead
+    // (orphaned grandchildren) — enumerate the parent-link tree and kill each
+    const [descendants] = await Promise.all([descendantsOf(pid), taskkillTree(pid)]);
+    await Promise.all(descendants.map((p) => taskkillTree(p)));
     return;
   }
   try {
@@ -101,6 +105,52 @@ export async function killTree(pid: string | number, forceDelayMs = 5000): Promi
     process.kill(Number(pid), 'SIGKILL');
   } catch {
     // already gone
+  }
+}
+
+function taskkillTree(pid: string | number): Promise<void> {
+  return new Promise<void>((resolveKill) => {
+    execFile('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true }, () =>
+      resolveKill(),
+    );
+  });
+}
+
+/** Best-effort descendant pids (parent links, one CIM snapshot); [] on failure. */
+async function descendantsOf(pid: string | number): Promise<string[]> {
+  try {
+    const out = await new Promise<string>((resolve, reject) => {
+      execFile(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-Command',
+          'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId | ConvertTo-Json -Compress',
+        ],
+        { windowsHide: true, timeout: 10_000, maxBuffer: 16 * 1024 * 1024 },
+        (err, stdout) => (err ? reject(err) : resolve(stdout)),
+      );
+    });
+    if (!out.trim()) return [];
+    const parsed = JSON.parse(out) as { ProcessId: number; ParentProcessId: number }[];
+    const rows = Array.isArray(parsed) ? parsed : [parsed];
+    const childrenOf = new Map<number, number[]>();
+    for (const r of rows) {
+      const list = childrenOf.get(r.ParentProcessId) ?? [];
+      list.push(r.ProcessId);
+      childrenOf.set(r.ParentProcessId, list);
+    }
+    const found: string[] = [];
+    const queue = [Number(pid)];
+    while (queue.length) {
+      for (const c of childrenOf.get(queue.pop() as number) ?? []) {
+        found.push(String(c));
+        queue.push(c);
+      }
+    }
+    return found;
+  } catch {
+    return [];
   }
 }
 

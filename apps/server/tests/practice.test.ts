@@ -97,15 +97,19 @@ describe('practice engine (T07)', () => {
     });
     expect(revealBefore.statusCode).toBe(409);
     expect(revealBefore.json().error.code).toBe('KEY_NOT_VERIFIED');
-    expect(revealBefore.json().error.details.keyStatus).toBe('unverified');
+    // the scheduled auto-verification may already have run (stub output is not
+    // verifiable → 'failed') or not yet ('unverified') — the gate is closed either way
+    expect(['unverified', 'failed']).toContain(revealBefore.json().error.details.keyStatus);
 
     // failing verification keeps the gate closed
     h.ctx.oneshot = stubOneshot('```json\n{"ok":false,"reason":"key contradicts the slides"}\n```');
     const failed = await h.app.inject({ method: 'POST', url: `/api/questions/${q.id}/verify-key` });
     expect(failed.json().keyStatus).toBe('failed');
-    expect(
-      (await h.app.inject({ method: 'POST', url: `/api/questions/${q.id}/reveal-key` })).statusCode,
-    ).toBe(409);
+    const revealAfterFail = await h.app.inject({
+      method: 'POST',
+      url: `/api/questions/${q.id}/reveal-key`,
+    });
+    expect(revealAfterFail.statusCode).toBe(409);
 
     // passing verification opens the gate
     h.ctx.oneshot = stubOneshot('```json\n{"ok":true,"reason":"matches material"}\n```');
@@ -206,6 +210,49 @@ describe('practice engine (T07)', () => {
     expect(stats.perTopic[0].attempts).toBe(2);
     expect(stats.perTopic[0].correct).toBe(1);
     expect(stats.streakDays).toBe(1);
+  });
+
+  it('on-demand generation schedules key verification + questions SSE (contract)', async () => {
+    h = await makeHarness();
+    patchOc(h);
+    const id = await createSubject('P5');
+    h.ctx.oneshot = async (_cwd, prompt) => {
+      if (prompt.includes('ANSWER KEY')) {
+        await new Promise((r) => setTimeout(r, 20)); // verification is async after the 201
+        return '```json\n{"ok":true,"reason":"matches material"}\n```';
+      }
+      return '```studi0-quiz\n' + JSON.stringify(goodQuiz) + '\n```';
+    };
+    const questionEvents: unknown[] = [];
+    h.ctx.events.subscribe(id, (event, data) => {
+      if (event === 'questions') questionEvents.push(data);
+    });
+    const questions = (
+      await h.app.inject({
+        method: 'POST',
+        url: `/api/subjects/${id}/questions/generate`,
+        payload: { topic: 'heaps', count: 1 },
+      })
+    ).json();
+    expect(questions[0].keyStatus).toBe('unverified'); // snapshot before async verify lands
+    const t0 = Date.now();
+    let reveal = 0;
+    while (Date.now() - t0 < 3000) {
+      reveal = (
+        await h.app.inject({ method: 'POST', url: `/api/questions/${questions[0].id}/reveal-key` })
+      ).statusCode;
+      if (reveal === 200) break;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    expect(reveal).toBe(200); // auto-verified without a manual verify-key call
+    // the questions event fires after ALL keys verify — poll for it
+    for (let i = 0; i < 80 && questionEvents.length === 0; i++) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    expect(questionEvents).toHaveLength(1);
+    const final = (questionEvents[0] as { questions: { id: string; keyStatus: string }[] })
+      .questions;
+    expect(final.find((q) => q.id === questions[0].id)?.keyStatus).toBe('verified');
   });
 
   it('quizSpecSchema rejects blocks with missing keys', () => {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, api } from './client';
+import { ApiError, api, cancelJob, startJob } from './client';
 
 describe('api client', () => {
   afterEach(() => {
@@ -34,5 +34,25 @@ describe('api client', () => {
       vi.fn(async () => new Response(JSON.stringify([{ id: 'x' }]), { status: 200 })),
     );
     expect(await api<{ id: string }[]>('/api/x')).toEqual([{ id: 'x' }]);
+  });
+
+  it('sends bodyless POSTs (cancel) without content-type or body', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ id: 'j1' }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await cancelJob('j1');
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.body).toBeUndefined();
+    expect(new Headers(init.headers).has('content-type')).toBe(false);
+  });
+
+  it('still sends JSON content-type and body for POSTs that carry one', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ id: 'j2' }), { status: 202 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await startJob('s1', 'build');
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.body).toBe(JSON.stringify({ kind: 'build' }));
+    expect(new Headers(init.headers).get('content-type')).toBe('application/json');
   });
 });

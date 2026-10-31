@@ -74,7 +74,8 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 function send<T>(method: 'POST' | 'PUT', path: string, body?: unknown): Promise<T> {
   return api<T>(path, {
     method,
-    headers: { 'content-type': 'application/json' },
+    // bodyless POSTs must not carry a JSON content-type — Fastify rejects empty JSON bodies
+    headers: body === undefined ? undefined : { 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 }

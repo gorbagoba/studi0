@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { parseFailures, parseProgress, type FailureLine } from './parse.js';
-import { killTreeWithDeadline, spawnArgs } from '../util/proc.js';
+import { killTree, killTreeWithDeadline, spawnArgs } from '../util/proc.js';
 import { extractionPrompt, VERIFICATION_PROMPT } from '../graph/prompts.js';
 import { safeWriteFile } from '../fs/safeWrite.js';
 import * as jobsRepo from '../db/repos/jobs.js';
@@ -44,7 +44,13 @@ export const makeRunPipeline =
   (oneshot: OneshotFn, db: Db): RunPipelineFn =>
   async (job, subject, onUpdate, signal) => {
     const prompt = extractionPrompt(job.kind, subject.name);
-    const { pid, done, child } = spawnArgs(['run', '--auto', prompt], subject.path);
+    // --agent: the global default agent is plan-only and would never execute
+    // graphify; --standalone: a private opencode server inside this tree so
+    // kill-tree can stop (and observe) the actual agent work
+    const { pid, done, child } = spawnArgs(
+      ['run', '--auto', '--agent', 'studi0-pipeline', '--standalone', prompt],
+      subject.path,
+    );
     // persist the pid: boot cleanup must be able to kill-tree orphans after a restart
     jobsRepo.updateJob(db, job.id, { pid: pid !== undefined ? String(pid) : null });
     let aborted = false;
@@ -109,5 +115,7 @@ export const makeRunPipeline =
     } finally {
       kills.delete(job.id);
       signal.removeEventListener('abort', abort);
+      // the direct child is gone; reap any descendants it outlived (best-effort)
+      if (pid !== undefined) void killTree(pid);
     }
   };
