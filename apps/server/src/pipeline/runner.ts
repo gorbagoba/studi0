@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import { parseFailures, parseProgress, stripStepMarkers, type FailureLine } from './parse.js';
 import { appendBuildLog } from './buildLog.js';
 import { killTree, killTreeWithDeadline, spawnArgs } from '../util/proc.js';
@@ -110,6 +111,15 @@ export const makeRunPipeline =
           status: 'failed',
           partial: parseFailures(res.stdout),
           error: `opencode run exited with code ${res.code}`,
+        });
+      }
+      // exit 0 is not success: a run that ends its turn mid-pipeline produces no graph
+      if (!existsSync(path.join(subject.path, 'graphify-out', 'graph.json'))) {
+        log('FAILED: run ended without producing graph.json (extraction incomplete? see out: lines above)');
+        return finish({
+          status: 'failed',
+          partial: parseFailures(res.stdout),
+          error: 'pipeline run ended without producing graph.json (see build log)',
         });
       }
       const failures = parseFailures(res.stdout);

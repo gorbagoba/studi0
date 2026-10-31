@@ -38,6 +38,11 @@ if (process.env.STUDI0_TEST_SLOW === '1') { setTimeout(() => process.exit(0), 60
 console.log('studi0-progress {"done":0,"total":1,"file":null}');
 console.log('studi0-progress {"done":1,"total":1,"file":"material/a.md"}');
 console.log('DONE 1 files ok, 0 failed.');
+// real graphify always leaves a graph behind; the no-graph variant (fake success) skips this
+if (process.env.STUDI0_TEST_NO_GRAPH !== '1') {
+  fs.mkdirSync('graphify-out', { recursive: true });
+  fs.writeFileSync('graphify-out/graph.json', '{"nodes":[]}');
+}
 process.exit(0);
 `;
 
@@ -143,6 +148,33 @@ describe('proc + real pipeline runner (QA blocker 1 / minor 8)', () => {
     } finally {
       delete process.env.STUDI0_TEST_GC;
       delete process.env.STUDI0_TEST_GC_PID;
+    }
+  }, 60_000);
+
+  it('real runner: exit-0 without graph.json is a failed job, not a fake success (cs2040c regression)', async () => {
+    h = await makeHarness();
+    process.env.STUDI0_TEST_NO_GRAPH = '1';
+    try {
+      const id = await createSubject('NoGraph');
+      const subject = (await h.app.inject({ method: 'GET', url: `/api/subjects/${id}` })).json();
+      await writeFile(path.join(subject.path, 'run'), RUN_SCRIPT);
+      const jobId = (
+        await h.app.inject({ method: 'POST', url: `/api/subjects/${id}/jobs`, payload: { kind: 'build' } })
+      ).json().id;
+      const t0 = Date.now();
+      let job = { status: '', error: '' };
+      while (Date.now() - t0 < 30_000) {
+        job = (await h.app.inject({ method: 'GET', url: `/api/jobs/${jobId}` })).json();
+        if (['complete', 'partial', 'failed', 'cancelled'].includes(job.status)) break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      expect(job.status).toBe('failed');
+      expect(job.error).toContain('graph.json');
+      // lastBuiltAt must NOT advance on a fake success — the graph state did not change
+      const info = (await h.app.inject({ method: 'GET', url: `/api/subjects/${id}/graph` })).json();
+      expect(info.lastBuiltAt).toBeNull();
+    } finally {
+      delete process.env.STUDI0_TEST_NO_GRAPH;
     }
   }, 60_000);
 

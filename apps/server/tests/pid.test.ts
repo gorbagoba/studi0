@@ -38,6 +38,8 @@ describe('job pid bookkeeping', () => {
   it('runner persists the spawned child pid on the job row', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'studi0-pid-'));
     made.push(dir);
+    await (await import('node:fs/promises')).mkdir(path.join(dir, 'graphify-out'), { recursive: true });
+    await (await import('node:fs/promises')).writeFile(path.join(dir, 'graphify-out', 'graph.json'), '{}');
     const db = openDb(path.join(dir, 'studi0.db'));
     insertSubject(db, { id: 'subject-1', name: 'S', path: dir, created_at: new Date().toISOString() });
     const job = jobsRepo.insertJob(db, 'job-1', 'subject-1', 'build');
