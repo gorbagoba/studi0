@@ -15,6 +15,13 @@ export interface FailureLine {
   reason: string;
 }
 
+// opencode step markers (§N§) are protocol artifacts, not content; they also
+// break line-anchored JSON extraction, so strip before any parsing
+// shortcut: a marker split across two deltas leaks its fragment — rare, cosmetic
+export function stripStepMarkers(text: string): string {
+  return text.replace(/\u00A7\d+\u00A7\s?/g, '');
+}
+
 function jsonObjectsOnLines(stdout: string): unknown[] {
   const out: unknown[] = [];
   for (const line of stdout.split(/\r?\n/)) {
@@ -48,8 +55,7 @@ export function parseProgress(stdout: string): ProgressLine | null {
   return null;
 }
 
-export function parseFailures(stdout: string): FailureLine[] {
-  const failures: FailureLine[] = [];
+export function parseFailures(stdout: string): FailureLine[] {  const failures: FailureLine[] = [];
   for (const line of stdout.split(/\r?\n/)) {
     if (!line.includes('studi0-failed')) continue;
     for (const obj of jsonObjectsOnLines(line)) {

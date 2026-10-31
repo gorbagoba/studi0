@@ -1,5 +1,6 @@
 import type { Config } from '../config.js';
 import { spawnArgs, resolveOpencodeBin, killTree, killTreeWithDeadline } from './proc.js';
+import { stripStepMarkers } from '../pipeline/parse.js';
 
 export type OneshotFn = (cwd: string, prompt: string, signal?: AbortSignal) => Promise<string>;
 
@@ -37,7 +38,7 @@ export const makeOneshot =
         console.error(`[oneshot] opencode run failed (${res.code}): ${tail || 'no stderr'}`);
         throw new Error(`opencode run failed (${res.code})`);
       }
-      return res.stdout;
+      return stripStepMarkers(res.stdout);
     } finally {
       signal?.removeEventListener('abort', kill);
       clearTimeout(timer);

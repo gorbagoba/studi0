@@ -9,6 +9,7 @@ import { rotationPrompt } from '../graph/prompts.js';
 import { safeWriteFile } from '../fs/safeWrite.js';
 import type { ChatMessage, ChatSession } from '@studi0/shared';
 import { HttpError } from '../util/errors.js';
+import { stripStepMarkers } from '../pipeline/parse.js';
 
 export function sessionToDto(row: ChatSessionRow): ChatSession {
   return chatRepo.sessionToDto(row);
@@ -26,12 +27,6 @@ export async function createOcSession(
 }
 
 /** Proxy opencode messages into contract ChatMessage[]; throws SESSION_GONE. */
-// opencode step markers (§N§) are protocol artifacts, not content
-// shortcut: a marker split across two deltas leaks its fragment — rare, cosmetic
-export function stripStepMarkers(text: string): string {
-  return text.replace(/\u00A7\d+\u00A7\s?/g, '');
-}
-
 export async function fetchHistory(
   client: OcClient,
   ocSessionId: string,

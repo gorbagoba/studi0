@@ -1,7 +1,8 @@
 import * as chatRepo from '../db/repos/chat.js';
 import * as jobsRepo from '../db/repos/jobs.js';
 import * as lessonsRepo from '../db/repos/lessons.js';
-import { maybeRotate, fetchHistory, stripStepMarkers } from './sessions.js';
+import { maybeRotate, fetchHistory } from './sessions.js';
+import { stripStepMarkers } from '../pipeline/parse.js';
 import { detectAndIndexLessons, snapshotLessons } from './lessons.js';
 import { extractQuizBlocks, depositQuiz } from './quizScan.js';
 import type { Db } from '../db/index.js';

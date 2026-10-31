@@ -115,7 +115,7 @@ No files are copied or moved (AC1).
 → `200 { dir: string; entries: FileEntry[] }` · `404 SUBJECT_NOT_FOUND | FILE_NOT_FOUND` · `400 PATH_TRAVERSAL`
 
 `POST /api/subjects/:id/files` — multipart, field `files` (repeatable), cap 200 MB/file, extensions `.pdf`/`.md` only. Per-file accept/reject; accepted files stream into `material/` (name sanitized, collisions suffixed `-1`, `-2`, …).
-→ `200 { accepted: FileEntry[]; rejected: { name: string; reason: string }[] }` · `404 SUBJECT_NOT_FOUND` · `415 UNSUPPORTED_FILE_TYPE` (only when nothing at all was acceptable)
+→ `200 { accepted: FileEntry[]; rejected: { name: string; reason: string }[] }` · `404 SUBJECT_NOT_FOUND` · `415 UNSUPPORTED_FILE_TYPE` envelope with `details.rejected` (only when nothing at all was acceptable)
 
 ### Jobs (graph pipeline)
 
