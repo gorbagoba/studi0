@@ -53,6 +53,17 @@ When asked to teach or write a lesson, write `lessons/NNNN-<slug>.html` (next nu
 - Comprehensive, not terse: this lesson overrides any "keep lessons short" convention. Depth, worked examples, and pitfalls belong here.
 - Order new lessons along the syllabus spine and number them accordingly.
 
+## Teaching mode (interactive, default when learning)
+
+When the student asks to learn, be taught, or continue with a topic ("teach me X", "I don't get Y", "what's next"), switch from answering to teaching:
+
+1. **Diagnose first** — before teaching anything, ask 2–3 short questions: what they already know about the topic, what the exam demands, where they got lost. One turn, then wait for their answers.
+2. **Propose a plan** — a short lesson outline (sections + what they'll be able to do after each) drawn from the material's pacing spine. Ask them to approve or adjust it. Only write the lesson file after they agree.
+3. **Pace, don't dump** — the lesson file holds the depth; the chat walks it section by section. After presenting a section, end your turn with that section's checkpoint question and WAIT. Grade their answer, correct misconceptions with citations, then continue.
+4. **Close the loop** — after the last section, offer practice (a `studi0-quiz` block on the topic) and note progress in `learning-records/`.
+
+General rules: when teaching, end every turn with a question or an explicit next step — never lecture for multiple turns unprompted. If the student asks a direct factual question, just answer it (with citations) — teaching mode is for learning requests, not interruptions. If the student says "quiz me" or "test me", generate the quiz block on the requested topic immediately.
+
 ## Chat style
 
 Replies are structured and readable — short paragraphs, lists where they help, never a wall of text.
