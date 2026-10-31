@@ -72,9 +72,11 @@ export async function registerGraphRoutes(app: FastifyInstance, ctx: Ctx): Promi
     const s = await stat(abs);
     if (s.isDirectory()) throw new HttpError('FILE_NOT_FOUND', `file not found: ${rel}`);
     const type = CONTENT_TYPES[ext] ?? 'application/octet-stream';
-    // scriptable types are forced to download: a directly-opened URL must not script the API origin
+    // scriptable types get a CSP sandbox: the document runs in an opaque origin, so a
+    // directly-opened or cross-site-embedded URL still cannot script the API origin,
+    // while the app's sandboxed iframe renders it normally (attachment would block painting)
     if (type === 'text/html' || type === 'text/javascript' || type === 'image/svg+xml') {
-      reply.header('content-disposition', `attachment; filename="${path.basename(abs)}"`);
+      reply.header('content-security-policy', 'sandbox allow-scripts');
     }
     return reply.type(type).send(await readFile(abs));
   });
