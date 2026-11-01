@@ -64,7 +64,8 @@ export function ChatPanel({
     setSession(null);
     setStreamText(null);
     setError(null);
-    setEntered(lessonId === undefined && showSessions);
+    // lesson chats open straight into the conversation; subject chats show the list first
+    setEntered(lessonId !== undefined);
     void (async () => {
       try {
         if (lessonId === undefined && showSessions) {
