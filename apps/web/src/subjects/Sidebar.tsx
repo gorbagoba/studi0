@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useSubjects } from '../api/hooks';
-import { deleteSubject } from '../api/client';
+import { deleteSubject, shutdownServer } from '../api/client';
 import { useApp } from '../state/app';
 import { AddSubjectDialog } from './AddSubjectDialog';
 import { Badge } from '../components/Badge';
@@ -10,6 +10,7 @@ export function Sidebar() {
   const { subjectId, selectSubject } = useApp();
   const subjects = useSubjects();
   const [addOpen, setAddOpen] = useState(false);
+  const [shuttingDown, setShuttingDown] = useState(false);
 
   async function onDelete(name: string, id: string) {
     // unregister only — server never touches the files on disk
@@ -17,6 +18,18 @@ export function Sidebar() {
     await deleteSubject(id);
     if (id === subjectId) selectSubject(null);
     subjects.reload();
+  }
+
+  function onShutdown() {
+    if (
+      !window.confirm(
+        'Shut down studi0? Running graph builds are cancelled, the teacher goes offline, and you will need to restart with `pnpm dev`.',
+      )
+    ) {
+      return;
+    }
+    setShuttingDown(true);
+    void shutdownServer().catch(() => undefined);
   }
 
   return (
@@ -57,6 +70,15 @@ export function Sidebar() {
         )}
       </nav>
       {subjects.error !== null && <ErrorBanner message={subjects.error} />}
+      {shuttingDown ? (
+        <p className="muted shutdown-note" role="status">
+          Server shut down. Close this tab — restart with <code>pnpm dev</code>.
+        </p>
+      ) : (
+        <button type="button" className="btn btn-small shutdown-btn" onClick={onShutdown}>
+          Shut down
+        </button>
+      )}
       <AddSubjectDialog
         open={addOpen}
         onClose={() => setAddOpen(false)}

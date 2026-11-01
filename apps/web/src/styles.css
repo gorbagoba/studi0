@@ -594,6 +594,21 @@ fieldset legend {
   background: var(--bg);
 }
 
+.shutdown-btn {
+  margin-top: auto;
+  color: var(--muted);
+}
+
+.shutdown-btn:hover {
+  color: var(--err);
+  border-color: var(--err-line);
+}
+
+.shutdown-note {
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
 .theme-toggle {
   position: fixed;
   top: 0.7rem;

@@ -96,6 +96,9 @@ export const getBuildLog = (id: ID): Promise<{ log: string | null }> =>
 export const setupCourse = (id: ID, body: CourseSetupBody): Promise<{ ok: boolean }> =>
   send<{ ok: boolean }>('POST', `/api/subjects/${id}/setup`, body);
 
+export const shutdownServer = (): Promise<{ ok: boolean }> =>
+  send<{ ok: boolean }>('POST', '/api/shutdown');
+
 export const getSubject = (id: ID): Promise<SubjectDetail> =>
   api<SubjectDetail>(`/api/subjects/${id}`);
 

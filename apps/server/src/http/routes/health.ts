@@ -7,4 +7,10 @@ export async function registerHealthRoutes(app: FastifyInstance, ctx: Ctx): Prom
     ok: true,
     opencode: ctx.oc.status(),
   }));
+
+  // clean shutdown via the SIGTERM path (drains jobs, stops opencode, closes db)
+  app.post('/api/shutdown', async (_req, reply) => {
+    void reply.send({ ok: true });
+    setTimeout(() => process.kill(process.pid, 'SIGTERM'), 50).unref();
+  });
 }

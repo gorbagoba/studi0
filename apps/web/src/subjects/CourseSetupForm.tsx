@@ -42,7 +42,7 @@ export function CourseSetupForm({ subjectId }: { subjectId: string }) {
 
   return (
     <section aria-labelledby="setup-title" className="panel">
-      <h3 id="setup-title">Course setup</h3>
+      <h2 id="setup-title">Course setup</h2>
       <p className="muted">
         Your answers are written verbatim into <code>MISSION.md</code> — the teacher reads it before
         every session. Every field is optional; blanks are simply omitted.

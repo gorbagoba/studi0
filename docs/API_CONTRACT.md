@@ -155,6 +155,9 @@ No files are copied or moved (AC1).
 `POST /api/subjects/:id/setup` — course setup form answers, written verbatim into the delimited `## Student setup (from form)` block of `MISSION.md` (idempotent: retakes replace the block, teacher-written content is preserved; blank fields omitted; all fields optional).
 → `200 { ok: true }` · `400 VALIDATION`
 
+`POST /api/shutdown` — clean shutdown: drains running jobs, stops the managed opencode server, closes the DB, exits. The response is sent before the process exits.
+→ `200 { ok: true }`
+
 `GET /api/subjects/:id/wiki` — list pages (graphify-generated, in `graphify-out/wiki/`).
 → `200 { pages: { name: string; updatedAt: ISO }[] }`
 
