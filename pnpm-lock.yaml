@@ -212,13 +212,13 @@ importers:
 
   apps/web:
     dependencies:
-      '@fontsource-variable/fraunces':
-        specifier: ^5.3.0
-        version: 5.3.0
-      '@fontsource-variable/ibm-plex-sans':
-        specifier: ^5.3.0
-        version: 5.3.0
       '@fontsource/ibm-plex-mono':
+        specifier: ^5.3.0
+        version: 5.3.0
+      '@fontsource/jetbrains-mono':
+        specifier: ^5.3.0
+        version: 5.3.0
+      '@fontsource/vt323':
         specifier: ^5.3.0
         version: 5.3.0
       '@studi0/shared':
@@ -558,14 +558,14 @@ packages:
   '@fastify/proxy-addr@5.1.2':
     resolution: {integrity: sha512-uqB4QsgVoro0XDC+DIftIMGXHdBPn+lK6Ek3xXAIxPMCJfqxnbtyEoMCm2KPUVOuIosd7Cyw9HawEqMFM/UA+g==}
 
-  '@fontsource-variable/fraunces@5.3.0':
-    resolution: {integrity: sha512-9BYGySn4AHEJdgp9Z28tQ3X+laJMEOITXkQarZXeloWQZDq5oOvXJ3kDA8c7MGIfpogIaZfjrQBqmda8POOCKA==}
-
-  '@fontsource-variable/ibm-plex-sans@5.3.0':
-    resolution: {integrity: sha512-agG8tXFEo0hD9+J7npa4vbbWult52eMLVaQ6WQRlhs/iCAojrMAoejru85W9HTVXHfyUj96KM7gp/KGAS87XaQ==}
-
   '@fontsource/ibm-plex-mono@5.3.0':
     resolution: {integrity: sha512-eTgnZjZEGk1QtD3ZstF+Vclo2HLAni8YMy34/DxllwZvyz1lR/1RF/xTiAquOBO7MvqBx8D2Ig2WCPMVfdZu7Q==}
+
+  '@fontsource/jetbrains-mono@5.3.0':
+    resolution: {integrity: sha512-fqDfB5I9f1p1TV486aUgB9t8zP84P0O1FtQR5Ol9vjwPy+S+EIGlVYm1cvj2W5shcZMTg2nZFdVMoH5wFu8a1A==}
+
+  '@fontsource/vt323@5.3.0':
+    resolution: {integrity: sha512-3w33Rg/0+R1587HQfz4t7Q7e0GGeCqr3wmzIwqdGInUnrGEwMA5eX39GP4Z9wpTQnwfhVOhYuxuRwRUeIcicbw==}
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -1924,11 +1924,11 @@ snapshots:
       '@fastify/forwarded': 3.1.2
       ipaddr.js: 2.5.0
 
-  '@fontsource-variable/fraunces@5.3.0': {}
-
-  '@fontsource-variable/ibm-plex-sans@5.3.0': {}
-
   '@fontsource/ibm-plex-mono@5.3.0': {}
+
+  '@fontsource/jetbrains-mono@5.3.0': {}
+
+  '@fontsource/vt323@5.3.0': {}
 
   '@humanfs/core@0.19.2':
     dependencies:

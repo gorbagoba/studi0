@@ -24,9 +24,9 @@
   --code-bg: #ececea;
   --badge-bg: #eeeeec;
   --track: #e3e3e0;
-  font-family: 'IBM Plex Sans Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  font-size: 15px;
-  line-height: 1.55;
+  font-family: 'JetBrains Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: 14.5px;
+  line-height: 1.6;
 }
 
 [data-theme='dark'] {
@@ -72,11 +72,17 @@ h2,
 h3,
 h4 {
   margin: 0 0 0.5rem;
-  line-height: 1.25;
-  font-family: 'Fraunces Variable', Georgia, 'Times New Roman', serif;
-  font-weight: 600;
-  letter-spacing: -0.015em;
+  line-height: 1.2;
+  font-family: 'VT323', 'JetBrains Mono', monospace;
+  font-weight: 400;
+  letter-spacing: 0.01em;
 }
+
+/* VT323 draws small — a terminal-display scale */
+h1 { font-size: 2.6rem; }
+h2 { font-size: 2rem; }
+h3 { font-size: 1.5rem; }
+h4 { font-size: 1.25rem; }
 
 p {
   margin: 0.35rem 0;
@@ -87,7 +93,7 @@ code {
   padding: 0 0.3rem;
   border-radius: 4px;
   font-size: 0.85em;
-  font-family: 'IBM Plex Mono', ui-monospace, Consolas, monospace;
+  font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
 }
 
 :focus-visible {
@@ -129,10 +135,10 @@ code {
 }
 
 .brand {
-  font-size: 1.35rem;
-  font-weight: 600;
-  font-family: 'Fraunces Variable', Georgia, serif;
-  letter-spacing: -0.01em;
+  font-size: 1.8rem;
+  font-weight: 400;
+  font-family: 'VT323', 'JetBrains Mono', monospace;
+  letter-spacing: 0.02em;
 }
 
 .subject-list {
@@ -347,7 +353,7 @@ label {
 }
 
 .code-input {
-  font-family: 'IBM Plex Mono', ui-monospace, Consolas, 'Cascadia Mono', monospace;
+  font-family: 'JetBrains Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
   font-size: 0.85rem;
 }
 
