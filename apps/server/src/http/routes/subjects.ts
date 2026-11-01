@@ -65,6 +65,7 @@ export async function registerSubjectRoutes(app: FastifyInstance, ctx: Ctx): Pro
     }
     if (body.name !== undefined) subjectsRepo.renameSubject(db, id, body.name);
     if (body.groupId !== undefined) subjectsRepo.setSubjectGroup(db, id, body.groupId);
+    if (body.icon !== undefined) subjectsRepo.setSubjectIcon(db, id, body.icon);
     const fresh = subjectsRepo.getSubject(db, id) as subjectsRepo.SubjectRow;
     return subjectToDto(fresh, await computeStale(row));
   });

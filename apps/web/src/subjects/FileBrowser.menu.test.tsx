@@ -38,6 +38,7 @@ const subjects = [
     stale: false,
     groupId: null,
     groupName: null,
+    icon: null,
   },
   {
     id: 's2',
@@ -48,6 +49,7 @@ const subjects = [
     stale: false,
     groupId: null,
     groupName: null,
+    icon: null,
   },
 ];
 

@@ -19,6 +19,7 @@ import { Badge } from '../components/Badge';
 import { ContextMenu } from '../components/ContextMenu';
 import type { MenuItem, MenuState } from '../components/ContextMenu';
 import { ErrorBanner } from '../components/ErrorBanner';
+import { EmojiPickerModal } from './EmojiPickerModal';
 
 const COLLAPSE_KEY = 'studi0.collapsed-groups';
 const SIDEBAR_KEY = 'studi0.sidebar-collapsed';
@@ -47,6 +48,7 @@ export function Sidebar() {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [dragSubject, setDragSubject] = useState<Subject | null>(null);
   const [dragOverGroup, setDragOverGroup] = useState<string | null>(null);
+  const [iconPickerFor, setIconPickerFor] = useState<Subject | null>(null);
   const [rail, setRail] = useState(() => localStorage.getItem(SIDEBAR_KEY) === '1');
 
   function setRailPersist(v: boolean): void {
@@ -166,6 +168,10 @@ export function Sidebar() {
       { label: 'Open', onSelect: () => selectSubject(s.id) },
       { label: 'Rename', onSelect: () => void onRenameSubject(s) },
       {
+        label: 'Set icon…',
+        onSelect: () => setIconPickerFor(s),
+      },
+      {
         label: 'Move to group',
         submenu: [
           ...groupList.map((g) => ({
@@ -272,6 +278,19 @@ export function Sidebar() {
         >
           »
         </button>
+        {all.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            className={`icon-btn rail-subject${s.id === subjectId ? ' active' : ''}`}
+            onClick={() => selectSubject(s.id)}
+            aria-label={s.name}
+            title={s.name}
+          >
+            {s.icon !== null ? <span className="subject-icon">{s.icon}</span> : s.name.charAt(0).toUpperCase()}
+          </button>
+        ))}
+        <div className="sidebar-rail-spacer" />
         <button
           type="button"
           className="icon-btn"
@@ -321,44 +340,6 @@ export function Sidebar() {
             title="Collapse sidebar"
           >
             «
-          </button>
-          <button
-            type="button"
-            className="icon-btn"
-            onClick={() => setSettingsOpen(true)}
-            aria-label="Settings & diagnostics"
-            title="Settings & diagnostics — probe servers, restart the teacher, cancel stuck jobs"
-          >
-            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-              <path
-                fill="currentColor"
-                d="M19.14,12.94a7.07,7.07 0 0,0 .06,-.94 7.07,7.07 0 0,0 -.06,-.94l2.03,-1.58a.5,.5 0 0,0 .12,-.64l-1.92,-3.32a.5,.5 0 0,0 -.61,-.22l-2.39,.96a7.3,7.3 0 0,0 -1.62,-.94l-.36,-2.54a.5,.5 0 0,0 -.5,-.42h-3.84a.5,.5 0 0,0 -.5,.42l-.36,2.54a7.3,7.3 0 0,0 -1.62,.94l-2.39,-.96a.5,.5 0 0,0 -.61,.22L2.74,8.84a.5,.5 0 0,0 .12,.64l2.03,1.58a7.07,7.07 0 0,0 -.06,.94 7.07,7.07 0 0,0 .06,.94L2.86,14.5a.5,.5 0 0,0 -.12,.64l1.92,3.32c.14,.24 .44,.34 .61,.22l2.39,-.96c.5,.4 1.04,.72 1.62,.94l.36,2.54a.5,.5 0 0,0 .5,.42h3.84a.5,.5 0 0,0 .5,-.42l.36,-2.54a7.3,7.3 0 0,0 1.62,-.94l2.39,.96c.24,.1 .55,0 .61,-.22l1.92,-3.32a.5,.5 0 0,0 -.12,-.64ZM12,15.5A3.5,3.5 0 1,1 12,8.5a3.5,3.5 0 0,1 0,7Z"
-              />
-            </svg>
-          </button>
-          <button
-            type="button"
-            className="icon-btn icon-danger"
-            onClick={() => void onShutdown()}
-            aria-label="Shut down studi0"
-            title="Shut down — cancels running builds, stops the teacher and API"
-          >
-            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-              <path
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-                d="M12 3v8"
-              />
-              <path
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-                d="M6.3 6.5a8 8 0 1 0 11.4 0"
-              />
-            </svg>
           </button>
         </div>
       </div>
@@ -519,6 +500,40 @@ export function Sidebar() {
         )}
       </nav>
       {subjects.error !== null && <ErrorBanner message={subjects.error} />}
+      <div className="sidebar-footer">
+        <button
+          type="button"
+          className="icon-btn"
+          onClick={() => setSettingsOpen(true)}
+          aria-label="Settings & diagnostics"
+          title="Settings & diagnostics — probe servers, restart the teacher, cancel stuck jobs"
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M19.14,12.94a7.07,7.07 0 0,0 .06,-.94 7.07,7.07 0 0,0 -.06,-.94l2.03,-1.58a.5,.5 0 0,0 .12,-.64l-1.92,-3.32a.5,.5 0 0,0 -.61,-.22l-2.39,.96a7.3,7.3 0 0,0 -1.62,-.94l-.36,-2.54a.5,.5 0 0,0 -.5,-.42h-3.84a.5,.5 0 0,0 -.5,.42l-.36,2.54a7.3,7.3 0 0,0 -1.62,.94l-2.39,-.96a.5,.5 0 0,0 -.61,.22L2.74,8.84a.5,.5 0 0,0 .12,.64l2.03,1.58a7.07,7.07 0 0,0 -.06,.94 7.07,7.07 0 0,0 .06,.94L2.86,14.5a.5,.5 0 0,0 -.12,.64l1.92,3.32c.14,.24 .44,.34 .61,.22l2.39,-.96c.5,.4 1.04,.72 1.62,.94l.36,2.54a.5,.5 0 0,0 .5,.42h3.84a.5,.5 0 0,0 .5,-.42l.36,-2.54a7.3,7.3 0 0,0 1.62,-.94l2.39,.96c.24,.1 .55,0 .61,-.22l1.92,-3.32a.5,.5 0 0,0 -.12,-.64ZM12,15.5A3.5,3.5 0 1,1 12,8.5a3.5,3.5 0 0,1 0,7Z"
+            />
+          </svg>
+        </button>
+        <button
+          type="button"
+          className="icon-btn icon-danger"
+          onClick={() => void onShutdown()}
+          aria-label="Shut down studi0"
+          title="Shut down — cancels running builds, stops the teacher and API"
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" d="M12 3v8" />
+            <path
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              d="M6.3 6.5a8 8 0 1 0 11.4 0"
+            />
+          </svg>
+        </button>
+      </div>
       <AddSubjectDialog
         open={addOpen}
         onClose={() => setAddOpen(false)}
@@ -528,6 +543,13 @@ export function Sidebar() {
         }}
       />
       <ContextMenu menu={menu} onClose={() => setMenu(null)} />
+      {iconPickerFor !== null && (
+        <EmojiPickerModal
+          subjectName={iconPickerFor.name}
+          onSelect={(emoji) => void run(() => renameSubject(iconPickerFor.id, { icon: emoji }))}
+          onClose={() => setIconPickerFor(null)}
+        />
+      )}
     </aside>
   );
 }
@@ -565,6 +587,7 @@ function SubjectRow({
         aria-current={active || undefined}
         onClick={onOpen}
       >
+        {s.icon !== null && <span className="subject-icon">{s.icon}</span>}
         <span>{s.name}</span>
         {s.stale && <Badge tone="warn">stale</Badge>}
       </button>

@@ -8,16 +8,17 @@ export interface SubjectRow {
   last_built_at: string | null;
   group_id: string | null;
   group_name?: string | null; // joined from groups (SELECT s.*, g.name AS group_name)
+  icon: string | null;
 }
 
 export function insertSubject(
   db: Db,
-  s: Omit<SubjectRow, 'last_built_at' | 'group_id' | 'group_name'>,
+  s: Omit<SubjectRow, 'last_built_at' | 'group_id' | 'group_name' | 'icon'>,
 ): SubjectRow {
   db.prepare(
     'INSERT INTO subjects (id, name, path, created_at, last_built_at, group_id) VALUES (?, ?, ?, ?, NULL, NULL)',
   ).run(s.id, s.name, s.path, s.created_at);
-  return { ...s, group_id: null, group_name: null, last_built_at: null };
+  return { ...s, group_id: null, group_name: null, last_built_at: null, icon: null };
 }
 
 const SUBJECT_SELECT =
@@ -47,6 +48,10 @@ export function listSubjects(db: Db): SubjectRow[] {
 
 export function renameSubject(db: Db, id: string, name: string): void {
   db.prepare('UPDATE subjects SET name = ? WHERE id = ?').run(name, id);
+}
+
+export function setSubjectIcon(db: Db, id: string, icon: string | null): void {
+  db.prepare('UPDATE subjects SET icon = ? WHERE id = ?').run(icon, id);
 }
 
 export function setSubjectGroup(db: Db, id: string, groupId: string | null): void {

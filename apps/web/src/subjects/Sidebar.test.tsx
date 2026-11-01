@@ -16,6 +16,7 @@ const subjects = [
     stale: false,
     groupId: 'g1',
     groupName: 'MATH',
+    icon: null,
   },
   {
     id: 's2',
@@ -26,6 +27,7 @@ const subjects = [
     stale: false,
     groupId: null,
     groupName: null,
+    icon: null,
   },
 ];
 

@@ -168,9 +168,9 @@ export function SettingsPage() {
 
       <h4>API server</h4>
       <p className="muted">
-        Shut down studi0 from the <strong>⏻ button beside the studi0 logo</strong> (top of the
-        sidebar). A restart from this page is impossible: the process you would need to start it is
-        the one being stopped. Run <code>pnpm dev</code> to bring the stack back.
+        Shut down studi0 with the <strong>⏻ button at the bottom of the sidebar</strong>. A restart
+        from this page is impossible: the process you would need to start it is the one being
+        stopped. Run <code>pnpm dev</code> to bring the stack back.
       </p>
     </section>
   );

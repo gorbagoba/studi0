@@ -102,7 +102,7 @@ export const deleteSubject = (id: ID): Promise<void> => send<void>('DELETE', `/a
 // PATCH takes {name?, groupId?}; groupId null = ungroup. The 409 JOB_CONFLICT refusal surfaces via ApiError.
 export const renameSubject = (
   id: ID,
-  patch: { name?: string; groupId?: string | null },
+  patch: { name?: string; groupId?: string | null; icon?: string | null },
 ): Promise<Subject> => send('PATCH', `/api/subjects/${id}`, patch);
 
 export const mergeSubject = (id: ID, targetId: ID): Promise<MergeResponse> =>

@@ -28,6 +28,7 @@ export function subjectToDto(row: SubjectRow, stale: boolean): Subject {
     stale,
     groupId: row.group_id,
     groupName: row.group_name ?? null,
+    icon: row.icon ?? null,
   };
 }
 

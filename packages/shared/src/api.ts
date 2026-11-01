@@ -44,6 +44,7 @@ export const subjectSchema = z.object({
   stale: z.boolean(),
   groupId: idSchema.nullable(),
   groupName: z.string().nullable(),
+  icon: z.string().nullable(),
 });
 export type Subject = z.infer<typeof subjectSchema>;
 
@@ -253,6 +254,8 @@ export type CreateSubjectRequest = z.infer<typeof createSubjectBodySchema>;
 export const renameSubjectBodySchema = z.object({
   name: z.string().min(1).max(120).optional(),
   groupId: idSchema.nullable().optional(),
+  /** emoji glyph for the sidebar/rail; null removes it */
+  icon: z.string().max(16).nullable().optional(),
 });
 
 /** Irreversible disk delete — the body must echo the exact subject name. */

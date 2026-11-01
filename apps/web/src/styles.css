@@ -141,6 +141,10 @@ code {
   align-items: center;
 }
 
+.sidebar-rail-spacer {
+  flex: 1;
+}
+
 .brand-row {
   display: flex;
   align-items: center;
@@ -172,9 +176,32 @@ code {
   border-color: var(--muted);
 }
 
-.icon-danger:hover {
+.sidebar-footer {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding-top: 0.5rem;
+}
+
+.sidebar-footer .icon-btn {
+  flex: 1;
+  width: 100%;
+}
+
+.sidebar-footer .icon-danger:hover {
+  color: var(--err);
+  border-color: var(--err-line);
+}
+
+.icon-danger {
   color: var(--danger);
-  border-color: var(--danger);
+}
+
+.icon-danger:hover {
+  color: #e5484d;
+  border-color: #e5484d;
 }
 
 .brand-actions {
@@ -692,6 +719,22 @@ fieldset legend {
   background: var(--accent-bg);
 }
 
+.subject-icon {
+  font-family: 'emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
+  font-size: 1.05rem;
+}
+
+.rail-subject {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.rail-subject.active {
+  border-color: var(--ink);
+  color: var(--ink);
+  background: var(--accent-bg);
+}
+
 .subject-row[draggable='true'] {
   cursor: grab;
 }
@@ -1162,6 +1205,40 @@ dl.diag-list dd.diag-status {
 
 .lesson-chat {
   width: 100%;
+}
+
+.emoji-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+}
+
+.emoji-modal {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.9rem;
+  max-width: min(26rem, 92vw);
+  max-height: 80vh;
+  overflow: auto;
+}
+
+.emoji-modal h4 {
+  margin-bottom: 0.5rem;
+}
+
+.emoji-picker-el {
+  --emoji-picker-background: var(--panel);
+  --emoji-picker-text-color: var(--ink);
+  --border-color: var(--line);
+  width: 22rem;
+  max-width: 84vw;
+  height: 24rem;
+  border: none;
 }
 
 /* ---- chat ---- */
