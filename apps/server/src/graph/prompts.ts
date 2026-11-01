@@ -87,9 +87,13 @@ TRANSCRIPT:
 ${transcript}`;
 }
 
-export function generationPrompt(topic: string, count: number): string {
+export function generationPrompt(topic: string, count: number, difficulty: 'mixed' | 'easy' | 'medium' | 'hard'): string {
+  const target =
+    difficulty === 'mixed'
+      ? 'a mix of easy, medium and hard'
+      : `consistently ${difficulty}`;
   return `You are generating practice questions for topic "${topic}" from this course's material (material/, graphify-out/wiki/, lessons/).
-Produce exactly ${count} questions of mixed types (mcq, short, code), grounded strictly in the material.
+Produce exactly ${count} questions of mixed types (mcq, short, code), at ${target} difficulty, grounded strictly in the material.
 Reply with ONLY one fenced block:
 \`\`\`studi0-quiz
 {"topic":"<topic>","questions":[{"topic":"<topic>","type":"mcq|short|code","prompt":"...","options":[{"id":"a","text":"..."},{"id":"b","text":"..."}],"key":{"answerIndex":0},"rubric":"what a complete answer needs"}]}

@@ -43,6 +43,7 @@ export async function registerPracticeRoutes(app: FastifyInstance, ctx: Ctx): Pr
     const questions = await generateQuestions(ctx.oneshot, db, subject, {
       topic: body.topic,
       count: body.count,
+      difficulty: body.difficulty,
       lessonId: body.lessonId ?? null,
       source: 'on_demand',
     });

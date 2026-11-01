@@ -16,10 +16,10 @@ export async function generateQuestions(
   oneshot: OneshotFn,
   db: Db,
   subject: SubjectRow,
-  opts: { topic: string; count?: number; lessonId?: string | null; source: Question['source'] },
+  opts: { topic: string; count?: number; difficulty?: 'mixed' | 'easy' | 'medium' | 'hard'; lessonId?: string | null; source: Question['source'] },
 ): Promise<Question[]> {
-  const count = Math.min(Math.max(opts.count ?? 5, 1), 10);
-  const raw = await oneshot(subject.path, generationPrompt(opts.topic, count));
+  const count = Math.min(Math.max(opts.count ?? 5, 1), 20);
+  const raw = await oneshot(subject.path, generationPrompt(opts.topic, count, opts.difficulty ?? 'mixed'));
   const parsed = quizSpecSchema.safeParse(extractJson(raw));
   if (!parsed.success) {
     throw new HttpError('INTERNAL', 'question generation returned malformed output');

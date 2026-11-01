@@ -25,6 +25,7 @@ export function PracticePage({ subjectId, version }: { subjectId: ID; version: n
   const [queue, setQueue] = useState<Question[] | null>(null);
   const [genTopic, setGenTopic] = useState('');
   const [genCount, setGenCount] = useState(5);
+  const [genDifficulty, setGenDifficulty] = useState<'mixed' | 'easy' | 'medium' | 'hard'>('mixed');
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
 
@@ -33,7 +34,7 @@ export function PracticePage({ subjectId, version }: { subjectId: ID; version: n
     setGenerating(true);
     setGenError(null);
     try {
-      await generateQuestions(subjectId, { topic: genTopic.trim(), count: genCount });
+      await generateQuestions(subjectId, { topic: genTopic.trim(), count: genCount, difficulty: genDifficulty });
       setLocalV((x) => x + 1);
     } catch (err) {
       setGenError(displayError(err));
@@ -111,14 +112,28 @@ export function PracticePage({ subjectId, version }: { subjectId: ID; version: n
             placeholder="e.g. heaps"
           />
           <label htmlFor="gen-count">Count</label>
-          <input
+          <select
             id="gen-count"
-            type="number"
-            min={1}
-            max={10}
             value={genCount}
-            onChange={(e) => setGenCount(Number(e.target.value) || 5)}
-          />
+            onChange={(e) => setGenCount(Number(e.target.value))}
+          >
+            {[5, 10, 15, 20].map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+          <label htmlFor="gen-difficulty">Difficulty</label>
+          <select
+            id="gen-difficulty"
+            value={genDifficulty}
+            onChange={(e) => setGenDifficulty(e.target.value as 'mixed' | 'easy' | 'medium' | 'hard')}
+          >
+            <option value="mixed">Mixed</option>
+            <option value="easy">Easy</option>
+            <option value="medium">Medium</option>
+            <option value="hard">Hard</option>
+          </select>
           <button className="btn" type="submit" disabled={generating}>
             {generating ? 'Generating…' : 'Generate'}
           </button>

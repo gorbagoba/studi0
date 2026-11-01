@@ -295,7 +295,8 @@ export type SendMessageRequest = z.infer<typeof sendMessageBodySchema>;
 
 export const generateBodySchema = z.object({
   topic: z.string().min(1),
-  count: z.number().int().min(1).max(10).optional(),
+  count: z.number().int().min(1).max(20).optional(),
+  difficulty: z.enum(['mixed', 'easy', 'medium', 'hard']).optional(),
   lessonId: idSchema.optional(),
 });
 export type GenerateQuestionsRequest = z.infer<typeof generateBodySchema>;
