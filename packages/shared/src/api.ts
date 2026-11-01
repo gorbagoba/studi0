@@ -250,9 +250,13 @@ export const createSubjectBodySchema = z.object({
 export type CreateSubjectRequest = z.infer<typeof createSubjectBodySchema>;
 
 export const renameSubjectBodySchema = z.object({
-  name: z.string().min(1).max(120),
+  name: z.string().min(1).max(120).optional(),
   groupId: idSchema.nullable().optional(),
 });
+
+/** Irreversible disk delete — the body must echo the exact subject name. */
+export const deleteFilesBodySchema = z.object({ confirm: z.string().min(1) });
+export type DeleteFilesRequest = z.infer<typeof deleteFilesBodySchema>;
 
 export const createGroupBodySchema = z.object({ name: z.string().min(1).max(120) });
 export type CreateGroupRequest = z.infer<typeof createGroupBodySchema>;

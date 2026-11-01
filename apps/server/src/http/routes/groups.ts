@@ -10,12 +10,25 @@ export async function registerGroupRoutes(app: FastifyInstance, ctx: Ctx): Promi
 
   app.get('/api/groups', async () => groupsRepo.listGroups(db).map(groupsRepo.groupToDto));
 
+  /** The UNIQUE(name) constraint is the real gate — a lost check-then-act race maps to 409. */
+  function asNameTaken(e: unknown, name: string): never {
+    const msg = String((e as Error).message ?? '');
+    if (/UNIQUE/i.test(msg)) throw new HttpError('NAME_TAKEN', `a group named "${name}" already exists`);
+    throw e as Error;
+  }
+
   app.post('/api/groups', async (req, reply) => {
     const { name } = parseWith(createGroupBodySchema, req.body);
     if (groupsRepo.getGroupByName(db, name)) {
       throw new HttpError('NAME_TAKEN', `a group named "${name}" already exists`);
     }
-    return reply.code(201).send(groupsRepo.groupToDto(groupsRepo.insertGroup(db, name)));
+    let dto;
+    try {
+      dto = groupsRepo.groupToDto(groupsRepo.insertGroup(db, name));
+    } catch (e) {
+      asNameTaken(e, name);
+    }
+    return reply.code(201).send(dto);
   });
 
   app.patch('/api/groups/:id', async (req) => {
@@ -27,7 +40,11 @@ export async function registerGroupRoutes(app: FastifyInstance, ctx: Ctx): Promi
     if (groupsRepo.getGroupByName(db, name)) {
       throw new HttpError('NAME_TAKEN', `a group named "${name}" already exists`);
     }
-    groupsRepo.renameGroup(db, id, name);
+    try {
+      groupsRepo.renameGroup(db, id, name);
+    } catch (e) {
+      asNameTaken(e, name);
+    }
     return groupsRepo.groupToDto(groupsRepo.getGroup(db, id) as groupsRepo.GroupRowWithCount);
   });
 

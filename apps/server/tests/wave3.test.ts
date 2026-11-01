@@ -191,8 +191,7 @@ describe('delete-files-from-disk (T-S1)', () => {
     await mkdir(path.join(dir, 'material'), { recursive: true });
     await writeFile(path.join(dir, 'material', 'x.pdf'), 'X');
     const s = await makeSubject('Doomed', dir);
-
-    const res = await h.app.inject({ method: 'POST', url: `/api/subjects/${s.id}/delete-files` });
+    const res = await h.app.inject({ method: 'POST', url: `/api/subjects/${s.id}/delete-files`, payload: { confirm: 'Doomed' } });
     expect(res.statusCode).toBe(200);
     expect(res.json().ok).toBe(true);
     expect(existsSync(s.path)).toBe(false);
@@ -209,7 +208,7 @@ describe('delete-files-from-disk (T-S1)', () => {
       )
       .run(s.id, new Date().toISOString());
 
-    const res = await h.app.inject({ method: 'POST', url: `/api/subjects/${s.id}/delete-files` });
+    const res = await h.app.inject({ method: 'POST', url: `/api/subjects/${s.id}/delete-files`, payload: { confirm: 'Busy' } });
     expect(res.statusCode).toBe(409);
     expect(res.json().error.code).toBe('JOB_CONFLICT');
     expect(existsSync(s.path)).toBe(true);
@@ -226,7 +225,7 @@ describe('delete-files-from-disk (T-S1)', () => {
     await rm(dir, { recursive: true, force: true });
     await symlink(evil, dir, 'junction');
     try {
-      const res = await h.app.inject({ method: 'POST', url: `/api/subjects/${s.id}/delete-files` });
+      const res = await h.app.inject({ method: 'POST', url: `/api/subjects/${s.id}/delete-files`, payload: { confirm: 'Swapped' } });
       expect(res.statusCode).toBe(400);
       expect(res.json().error.code).toBe('PATH_TRAVERSAL');
       expect(existsSync(path.join(evil, 'precious.txt'))).toBe(true);
@@ -241,7 +240,7 @@ describe('delete-files-from-disk (T-S1)', () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'studi0-w3-gone-'));
     const s = await makeSubject('Gone', dir);
     await rm(dir, { recursive: true, force: true });
-    const res = await h.app.inject({ method: 'POST', url: `/api/subjects/${s.id}/delete-files` });
+    const res = await h.app.inject({ method: 'POST', url: `/api/subjects/${s.id}/delete-files`, payload: { confirm: 'Gone' } });
     expect(res.statusCode).toBe(400);
     expect(res.json().error.code).toBe('PATH_NOT_FOUND');
   });

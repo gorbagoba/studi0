@@ -51,7 +51,9 @@ export function sanitizeName(name: string): string {
     .replace(/[<>:"|?*]/g, '')
     .replace(/\p{Cc}/gu, '')
     .replace(/^\.+/, '')
-    .trim();
+    .trim()
+    // Windows silently rewrites names ending in dots/spaces — the row must match the disk
+    .replace(/[.\s]+$/, '');
   // Windows reserves these stems on any extension (CON.txt, NUL, COM1.md...)
   const dot = cleaned.indexOf('.');
   const stem = dot === -1 ? cleaned : cleaned.slice(0, dot);

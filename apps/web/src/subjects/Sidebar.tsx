@@ -107,7 +107,7 @@ export function Sidebar() {
       `Delete ALL files of "${s.name}" from disk? This is irreversible.\nType the subject name to confirm:`,
     );
     if (typed !== s.name) return;
-    await run(() => deleteSubjectFiles(s.id));
+    await run(() => deleteSubjectFiles(s.id, { confirm: typed }));
   }
 
   async function onRenameGroup(g: Group) {

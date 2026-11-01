@@ -130,7 +130,7 @@ describe('Sidebar groups and menus', () => {
     promptSpy.mockReturnValue('Linear Algebra');
     fireEvent.click(await screen.findByRole('button', { name: 'Linear Algebra options' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Delete files from disk' }));
-    await waitFor(() => expect(client.deleteSubjectFiles).toHaveBeenCalledWith('s1'));
+    await waitFor(() => expect(client.deleteSubjectFiles).toHaveBeenCalledWith('s1', { confirm: 'Linear Algebra' }));
   });
 
   it('shows the moved/skipped report after a merge', async () => {

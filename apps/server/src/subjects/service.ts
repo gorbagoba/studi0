@@ -16,7 +16,7 @@ import type { Subject, SubjectDetail, GraphStatus } from '@studi0/shared';
 import type { SubjectRow } from '../db/repos/subjects.js';
 import type { JobRow } from '../db/repos/jobs.js';
 
-const NAME_RE = /^[^<>:"/\\|?*\p{Cc}]{1,120}$/u;
+export const NAME_RE = /^[^<>:"/\\|?*\p{Cc}]{1,120}$/u;
 
 export function subjectToDto(row: SubjectRow, stale: boolean): Subject {
   return {

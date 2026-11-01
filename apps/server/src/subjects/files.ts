@@ -3,7 +3,7 @@ import { createWriteStream } from 'node:fs';
 import { existsSync, statSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { pipeline } from 'node:stream/promises';
-import { copyFile, mkdir, readdir, realpath, rm, stat, unlink } from 'node:fs/promises';
+import { copyFile, lstat, mkdir, readdir, realpath, rm, stat, unlink } from 'node:fs/promises';
 import type { Readable } from 'node:stream';
 import * as filesRepo from '../db/repos/files.js';
 import * as subjectsRepo from '../db/repos/subjects.js';
@@ -287,13 +287,14 @@ export async function mergeSubject(db: Db, source: SubjectRow, targetId: string)
   const skipped: string[] = [];
   for (const row of filesRepo.listSubjectFiles(db, source.id)) {
     if (!row.rel_path.startsWith('material/')) continue;
-    const from = safeResolve(source.path, row.rel_path);
-    const to = safeResolve(target.path, row.rel_path);
-    if (existsSync(to)) {
-      skipped.push(row.rel_path); // collision — the target's file wins
-      continue;
-    }
     try {
+      // resolution inside the try — one hostile-geometry row must not abort the merge
+      const from = safeResolve(source.path, row.rel_path);
+      const to = safeResolve(target.path, row.rel_path);
+      if (existsSync(to)) {
+        skipped.push(row.rel_path); // collision — the target's file wins
+        continue;
+      }
       await movePreserving(from, to);
     } catch (e) {
       console.warn(`[merge] could not move ${row.rel_path}: ${(e as Error).message}`);
@@ -411,9 +412,16 @@ export async function deleteSubjectFiles(db: Db, cfg: Config, subject: SubjectRo
   } catch {
     throw new HttpError('PATH_NOT_FOUND', `subject folder is no longer on disk: ${subject.path}`);
   }
-  // Inside the app-managed data dir ancestor symlinks are environmental (macOS /var) — tolerated.
   const norm = (p: string) => p.replaceAll('/', '\\').toLowerCase();
-  if (norm(real) !== norm(stored) && !isInside(cfg.subjectsDir, stored)) {
+  // A leaf reparse point (junction/symlink swap) must refuse on its own merits —
+  // only ANCESTOR divergence is environmental (macOS /var) and tolerated.
+  const realLeaf = await lstat(stored);
+  if (realLeaf.isSymbolicLink()) {
+    throw new HttpError('PATH_TRAVERSAL', 'subject folder root is a symlink/junction — refusing to delete');
+  }
+  const realParent = norm(path.dirname(real));
+  const storedParent = norm(path.dirname(stored));
+  if (realParent !== storedParent && !isInside(cfg.subjectsDir, storedParent)) {
     throw new HttpError(
       'PATH_TRAVERSAL',
       'subject folder no longer resolves to its registered path — refusing to delete',

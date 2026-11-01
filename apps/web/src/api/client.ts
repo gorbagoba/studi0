@@ -109,8 +109,8 @@ export const mergeSubject = (id: ID, targetId: ID): Promise<MergeResponse> =>
   send('POST', `/api/subjects/${id}/merge-into`, { targetId });
 
 /** Irreversible — deletes the subject's folder on disk; refused with 409 JOB_CONFLICT while a job runs. */
-export const deleteSubjectFiles = (id: ID): Promise<{ ok: boolean }> =>
-  send('POST', `/api/subjects/${id}/delete-files`);
+export const deleteSubjectFiles = (id: ID, body: { confirm: string }): Promise<{ ok: boolean }> =>
+  send('POST', `/api/subjects/${id}/delete-files`, body);
 
 // ---- groups ----
 
