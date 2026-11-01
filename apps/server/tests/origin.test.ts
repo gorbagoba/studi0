@@ -1,5 +1,11 @@
 import { describe, expect, it, afterEach } from 'vitest';
 import { makeHarness } from './helpers';
+import { makeConfig } from '../src/config.js';
+
+// the app allowlist derives from config — tests must use the same values
+const cfg = makeConfig();
+const viteHost = `127.0.0.1:${cfg.vitePort}`;
+const viteOrigin = `http://${viteHost}`;
 
 let h: Awaited<ReturnType<typeof makeHarness>> | undefined;
 
@@ -26,7 +32,7 @@ describe('origin guard on mutating routes', () => {
 
   it('allows the app origin and same-origin/none fetch metadata', async () => {
     h = await makeHarness();
-    expect((await post({ origin: 'http://127.0.0.1:5173' })).statusCode).toBe(201);
+    expect((await post({ origin: viteOrigin })).statusCode).toBe(201);
     expect((await post({ 'sec-fetch-site': 'same-origin' })).statusCode).toBe(201);
     expect((await post({ 'sec-fetch-site': 'none' })).statusCode).toBe(201);
   });
@@ -55,7 +61,7 @@ describe('origin guard on mutating routes', () => {
       method: 'POST',
       url: '/api/subjects',
       payload: { name: 'Rebind' },
-      headers: { host: 'rebind.attacker.com:5173', 'sec-fetch-site': 'same-origin' },
+      headers: { host: `rebind.attacker.com:${cfg.vitePort}`, 'sec-fetch-site': 'same-origin' },
     });
     expect(res.statusCode).toBe(403);
   });
@@ -66,7 +72,7 @@ describe('origin guard on mutating routes', () => {
       method: 'POST',
       url: '/api/subjects',
       payload: { name: 'Spoofed' },
-      headers: { host: '127.0.0.1:5173', origin: 'http://evil.example' },
+      headers: { host: viteHost, origin: 'http://evil.example' },
     });
     expect(res.statusCode).toBe(403);
   });

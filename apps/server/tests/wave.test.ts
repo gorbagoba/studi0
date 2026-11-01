@@ -3,10 +3,14 @@ import { writeFile, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { makeHarness } from './helpers';
 import { isAlive } from '../src/util/proc.js';
+import { makeConfig } from '../src/config.js';
 import type { TestHarness } from './helpers';
 
 // route every spawnArgs call at node itself: a real child without needing opencode
 process.env.OPENCODE_BIN = process.execPath;
+
+// the wave size the harness app actually uses (cfg.maxChunkConcurrency)
+const WAVE = makeConfig().maxChunkConcurrency;
 
 let h: TestHarness | undefined;
 
@@ -100,7 +104,7 @@ async function waitForTerminal(jobId: string, timeoutMs = 30_000): Promise<Recor
 }
 
 describe('wave pipeline runner (T-P1/T-P2)', () => {
-  it('plans, runs chunks in waves of ≤4, merges, verifies; progress + log SSE events flow', async () => {
+  it(`plans, runs chunks in waves of ≤${WAVE}, merges, verifies; progress + log SSE events flow`, async () => {
     h = await makeHarness();
     const { id, root } = await createSubject('Waves');
     await writeFile(path.join(root, 'run'), stageScript());
@@ -121,7 +125,7 @@ describe('wave pipeline runner (T-P1/T-P2)', () => {
       // artifacts: merge wrote the graph, verification one-shot wrote the report
       await expect(readFile(path.join(root, 'graphify-out', 'graph.json'), 'utf8')).resolves.toBeTruthy();
       await expect(readFile(path.join(root, 'graphify-out', 'VERIFY_REPORT.md'), 'utf8')).resolves.toContain('Confirmed edges');
-      // every chunk ran exactly once, and never more than 4 in flight
+      // every chunk ran exactly once, and never more than the configured wave in flight
       const lines = (await readFile(wavelog, 'utf8')).trim().split('\n');
       const started = lines.filter((l) => l.startsWith('start:'));
       expect(started).toHaveLength(9);
@@ -132,7 +136,7 @@ describe('wave pipeline runner (T-P1/T-P2)', () => {
         else inFlight--;
         maxInFlight = Math.max(maxInFlight, inFlight);
       }
-      expect(maxInFlight).toBeLessThanOrEqual(4);
+      expect(maxInFlight).toBeLessThanOrEqual(WAVE);
       // build.log passthrough + SSE log events share the same lines
       const tail = (await h.app.inject({ method: 'GET', url: `/api/subjects/${id}/graph/log` })).json() as {
         log: string;
@@ -182,7 +186,7 @@ describe('wave pipeline runner (T-P1/T-P2)', () => {
     h = await makeHarness();
     const { id, root } = await createSubject('WaveCancel');
     await writeFile(path.join(root, 'run'), stageScript());
-    process.env.STUDI0_TEST_CHUNKS = '6';
+    process.env.STUDI0_TEST_CHUNKS = String(WAVE + 2); // wave 1 = WAVE children, wave 2 = the rest
     process.env.STUDI0_TEST_CHUNK_SLOW = '1';
     process.env.STUDI0_TEST_WAVELOG = path.join(root, 'wave.log');
     const pidDir = path.join(root, 'pids');
@@ -194,20 +198,20 @@ describe('wave pipeline runner (T-P1/T-P2)', () => {
       const jobId = (
         await h.app.inject({ method: 'POST', url: `/api/subjects/${id}/jobs`, payload: { kind: 'build' } })
       ).json().id;
-      // wait until wave 1 (4 children) is in flight
+      // wait until wave 1 (WAVE children) is in flight
       const t0 = Date.now();
       while (Date.now() - t0 < 20_000) {
         const files = await fsp.readdir(pidDir).catch(() => [] as string[]);
-        if (files.length >= 4) break;
+        if (files.length >= WAVE) break;
         await new Promise((r) => setTimeout(r, 50));
       }
       const cancel = await h.app.inject({ method: 'POST', url: `/api/jobs/${jobId}/cancel` });
       expect(cancel.statusCode).toBe(200);
       const job = await waitForTerminal(jobId, 20_000);
       expect(job.status).toBe('cancelled');
-      // only wave 1 spawned (4 children); all of them were killed
+      // only wave 1 spawned (WAVE children); all of them were killed
       const files = await fsp.readdir(pidDir);
-      expect(files).toHaveLength(4);
+      expect(files).toHaveLength(WAVE);
       for (const f of files) {
         const pid = (await readFile(path.join(pidDir, f), 'utf8')).trim();
         expect(isAlive(pid)).toBe(false);

@@ -46,7 +46,7 @@ export async function buildApp(opts: { dataDir?: string; dbPath?: string } = {})
   const events = new EventBus();
   const oc = new OpencodeManager(cfg);
   const oneshot = makeOneshot(cfg);
-  const runPipeline: RunPipelineFn = makeRunPipeline(oneshot, db, events);
+  const runPipeline: RunPipelineFn = makeRunPipeline(oneshot, db, cfg, events);
   const queue = new JobQueue(db, events, cfg, runPipeline);
   const feedQuestions = makeFeedQuestions(db, events, oneshot);
 
@@ -64,12 +64,8 @@ export async function buildApp(opts: { dataDir?: string; dbPath?: string } = {})
     const reject = () =>
       reply.status(403).send({ error: { code: 'VALIDATION', message: 'cross-origin request rejected' } });
     const allowedHosts = [
-      `127.0.0.1:${cfg.port}`,
-      `localhost:${cfg.port}`,
-      '127.0.0.1:5173',
-      'localhost:5173',
-      '127.0.0.1:4173',
-      'localhost:4173',
+      // every port the app itself serves — api, vite dev, vite preview
+      ...[cfg.port, cfg.vitePort, cfg.previewPort].flatMap((p) => [`127.0.0.1:${p}`, `localhost:${p}`]),
       // light-my-request's default Host in tests — localhost itself is trusted
       'localhost:80',
       '127.0.0.1:80',

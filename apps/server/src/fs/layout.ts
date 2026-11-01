@@ -32,12 +32,16 @@ export async function ensureLayout(subjectRoot: string): Promise<void> {
   }
 }
 
-/** Sync the canonical agent files into the subject (byte-identical overwrite). */
-export async function syncTeacherAgent(subjectRoot: string): Promise<void> {
+/**
+ * Sync the canonical agent files into the subject, interpolating
+ * {{CHUNK_CONCURRENCY}} in studi0-pipeline.md (the file itself ships with the
+ * placeholder; the number is runtime config so pnpm calibrate can change it).
+ */
+export async function syncTeacherAgent(subjectRoot: string, chunkConcurrency: number): Promise<void> {
   for (const name of AGENT_FILES) {
     const src = path.join(agentDir, name);
     if (!existsSync(src)) continue;
-    const content = await readFile(src, 'utf8');
+    const content = (await readFile(src, 'utf8')).replaceAll('{{CHUNK_CONCURRENCY}}', String(chunkConcurrency));
     await safeWriteFile(path.join(subjectRoot, '.opencode', 'agents', name), content);
   }
 }

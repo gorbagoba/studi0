@@ -21,23 +21,45 @@ export function resolveOpencodeBin(): string | null {
   if (binCache !== undefined) return binCache;
   const candidates: string[] = [];
   if (process.env.OPENCODE_BIN) candidates.push(process.env.OPENCODE_BIN);
-  try {
-    const out = execFileSyncSafe('where.exe', ['opencode']);
-    const lines = out.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-    const exe = lines.find((l) => l.toLowerCase().endsWith('.exe'));
-    if (exe) candidates.push(exe);
-    // npm global layout: <bin>\opencode.cmd + <bin>\node_modules\@opencode\cli\bin\opencode.exe
-    const cmd = lines.find((l) => l.toLowerCase().endsWith('.cmd'));
-    if (cmd) {
-      candidates.push(
-        path.join(path.dirname(cmd), 'node_modules', '@opencode', 'cli', 'bin', 'opencode.exe'),
-      );
+  if (isWin) {
+    try {
+      const out = execFileSyncSafe('where.exe', ['opencode']);
+      const lines = out.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      const exe = lines.find((l) => l.toLowerCase().endsWith('.exe'));
+      if (exe) candidates.push(exe);
+      // npm global layout: <bin>\opencode.cmd + <bin>\node_modules\@opencode\cli\bin\opencode.exe
+      const cmd = lines.find((l) => l.toLowerCase().endsWith('.cmd'));
+      if (cmd) {
+        candidates.push(
+          path.join(path.dirname(cmd), 'node_modules', '@opencode', 'cli', 'bin', 'opencode.exe'),
+        );
+      }
+    } catch {
+      // where failed — fall through
     }
-  } catch {
-    // where failed — fall through to bare name (works on non-Windows)
+  } else {
+    try {
+      const out = execFileSyncSafe('which', ['opencode']);
+      const first = out.split(/\r?\n/).map((l) => l.trim()).find(Boolean);
+      if (first) candidates.push(first);
+    } catch {
+      // no which — bare name may still resolve via PATH at spawn time
+    }
+    candidates.push('opencode');
   }
-  if (!isWin) candidates.push('opencode');
   const found = candidates.find((c) => {
+    if (c === 'opencode') {
+      // bare name: verify it is actually on PATH (existsSync('opencode') checks cwd)
+      return (process.env.PATH ?? '')
+        .split(path.delimiter)
+        .some((d) => {
+          try {
+            return existsSync(path.join(d, c));
+          } catch {
+            return false;
+          }
+        });
+    }
     try {
       return existsSync(c);
     } catch {
@@ -59,6 +81,8 @@ export function spawnArgs(args: string[], cwd: string, env?: NodeJS.ProcessEnv):
     cwd,
     shell: false,
     windowsHide: true,
+    // POSIX: child leads its own process group, so killTree can kill the whole tree
+    detached: !isWin,
     env: { ...process.env, ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -95,17 +119,23 @@ export async function killTree(pid: string | number, forceDelayMs = 5000): Promi
     await Promise.all(descendants.map((p) => taskkillTree(p)));
     return;
   }
-  try {
-    process.kill(Number(pid), 'SIGTERM');
-  } catch {
-    return;
-  }
+  // POSIX: our spawns are group leaders (detached), so -pid reaches the whole
+  // tree; a foreign pid may not lead a group — fall back to the bare pid.
+  const num = Number(pid);
+  const signal = (sig: NodeJS.Signals) => {
+    try {
+      process.kill(-num, sig);
+    } catch {
+      try {
+        process.kill(num, sig);
+      } catch {
+        // already gone
+      }
+    }
+  };
+  signal('SIGTERM');
   await new Promise<void>((r) => setTimeout(r, Math.min(forceDelayMs, 2000)));
-  try {
-    process.kill(Number(pid), 'SIGKILL');
-  } catch {
-    // already gone
-  }
+  signal('SIGKILL');
 }
 
 function taskkillTree(pid: string | number): Promise<void> {

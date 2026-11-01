@@ -13,6 +13,7 @@ export interface OcStatus {
 
 const BOOT_TIMEOUT_MS = 15_000;
 const PROBE_FAILURES_BEFORE_REBOOT = 6; // ~60s of consecutive probe failures
+const isWin = process.platform === 'win32';
 
 /**
  * Single owner of the managed `opencode serve` process.
@@ -160,12 +161,33 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/**
+ * Does anything listen on `port`? Windows: netstat -ano parse; POSIX: lsof.
+ * Returns the owning pid or null. Ownership is then verified via
+ * commandLineMentions before anything is killed.
+ */
 async function pidListeningOn(port: number): Promise<string | null> {
-  const out = await new Promise<string>((resolve, reject) => {
-    execFile('netstat', ['-ano', '-p', 'tcp'], { windowsHide: true }, (err, stdout) =>
-      err ? reject(err) : resolve(stdout),
-    );
-  });
+  try {
+    if (isWin) {
+      const out = await new Promise<string>((resolve, reject) => {
+        execFile('netstat', ['-ano', '-p', 'tcp'], { windowsHide: true }, (err, stdout) =>
+          err ? reject(err) : resolve(stdout),
+        );
+      });
+      return netstatPidForPort(out, port);
+    }
+    const out = await new Promise<string>((resolve) => {
+      // lsof exits non-zero when the port is free — an empty result, not an error
+      execFile('lsof', ['-ti', `:${port}`], (err, stdout) => resolve(err ? '' : stdout));
+    });
+    return lsofPidForPort(out);
+  } catch {
+    return null;
+  }
+}
+
+/** Pure: the pid of the LISTENING socket on `port` in `netstat -ano` output. */
+export function netstatPidForPort(out: string, port: number): string | null {
   for (const line of out.split(/\r?\n/)) {
     if (!line.includes('LISTENING')) continue;
     if (!line.includes(`:${port} `) && !line.trim().endsWith(`:${port}`)) continue;
@@ -174,4 +196,9 @@ async function pidListeningOn(port: number): Promise<string | null> {
     if (pid && /^\d+$/.test(pid)) return pid;
   }
   return null;
+}
+
+/** Pure: the first pid in `lsof -ti :port` output. */
+export function lsofPidForPort(out: string): string | null {
+  return out.split(/\s+/).find((t) => /^\d+$/.test(t)) ?? null;
 }

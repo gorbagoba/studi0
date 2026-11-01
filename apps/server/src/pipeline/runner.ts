@@ -18,6 +18,7 @@ import type { EventBus } from '../http/sse.js';
 import type { JobRow } from '../db/repos/jobs.js';
 import type { SubjectRow } from '../db/repos/subjects.js';
 import type { OneshotFn } from '../util/oneshot.js';
+import type { Config } from '../config.js';
 
 export interface PipelineUpdate {
   done: number;
@@ -45,18 +46,16 @@ export function killJob(jobId: string): void {
   kills.get(jobId)?.();
 }
 
-/** Concurrent chunk-extraction cap — more in-flight model requests kill the connection (agents/studi0-pipeline.md). */
-const CHUNK_WAVE = 4;
-
 /**
  * The pipeline job body. build/update run as waves: a planner one-shot decides
  * the chunk split (JSON only), the runner itself executes chunk extractions in
- * waves of ≤4 headless children, then a final run merges + exports (plus the
- * verification one-shot). recluster — and any wave run whose plan is unusable —
- * falls back to the original single-run pipeline.
+ * waves of ≤ cfg.maxChunkConcurrency headless children (see pnpm calibrate),
+ * then a final run merges + exports (plus the verification one-shot).
+ * recluster — and any wave run whose plan is unusable — falls back to the
+ * original single-run pipeline.
  */
 export const makeRunPipeline =
-  (oneshot: OneshotFn, db: Db, events?: EventBus): RunPipelineFn =>
+  (oneshot: OneshotFn, db: Db, cfg: Config, events?: EventBus): RunPipelineFn =>
   async (job, subject, onUpdate, signal) => {
     const startedAt = Date.now();
     // every protocol/raw line lands in build.log AND the subject SSE stream (same text)
@@ -257,7 +256,8 @@ export const makeRunPipeline =
       log(`chunk plan: ${chunks.length} chunks`);
       const total = chunks.length;
 
-      // stage 2 — chunk extraction in waves of ≤4 concurrent children
+      // stage 2 — chunk extraction in waves of ≤ maxChunkConcurrency concurrent children
+      const wave = cfg.maxChunkConcurrency;
       let done = 0;
       const failures: FailureLine[] = [];
       const runChunk = async (chunk: string): Promise<FailureLine[]> => {
@@ -283,12 +283,12 @@ export const makeRunPipeline =
         for (const f of chunkFailures) log(`failed file: ${f.file} — ${f.reason}`);
         return chunkFailures;
       };
-      for (let i = 0; i < chunks.length; i += CHUNK_WAVE) {
+      for (let i = 0; i < chunks.length; i += wave) {
         onUpdate({ done, total, currentFile: chunks[i] });
         // failures accumulate in chunk order — concurrent children must not reorder the report
-        const reported = await Promise.all(chunks.slice(i, i + CHUNK_WAVE).map(runChunk));
+        const reported = await Promise.all(chunks.slice(i, i + wave).map(runChunk));
         for (const fl of reported) failures.push(...fl);
-        done = Math.min(i + CHUNK_WAVE, total);
+        done = Math.min(i + wave, total);
         if (aborted || signal.aborted) return finish({ status: 'cancelled', partial: null, error: null });
       }
       onUpdate({ done, total, currentFile: null });

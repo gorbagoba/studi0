@@ -1,5 +1,6 @@
 import { describe, expect, it, afterEach } from 'vitest';
 import { makeHarness } from './helpers';
+import { makeConfig } from '../src/config.js';
 
 let h: Awaited<ReturnType<typeof makeHarness>>;
 
@@ -14,7 +15,12 @@ describe('GET /api/health', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json() as Record<string, unknown>;
     expect(body.ok).toBe(true);
-    expect(body.opencode).toEqual({ running: false, pid: null, port: 44096, healthy: false });
+    expect(body.opencode).toEqual({
+      running: false,
+      pid: null,
+      port: makeConfig().ocPort,
+      healthy: false,
+    });
     expect(body.db).toBe('ok');
     expect(Number.isInteger(body.uptime_s)).toBe(true);
     expect(typeof body.probed_at).toBe('string');

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 export interface Config {
@@ -14,16 +15,33 @@ export interface Config {
   maxFileBytes: number;
   ocPort: number;
   ocHost: string;
+  vitePort: number; // dev server + Host allowlist must agree (scripts/setup.mjs writes these)
+  previewPort: number; // vite preview
   oneshotTimeoutMs: number;
   sseHeartbeatMs: number;
   splitTargetBytes: number; // pdf-split target size per part (test/tuning seam)
+  maxChunkConcurrency: number; // chunk-wave parallelism (STUDI0_MAX_CHUNK_CONCURRENCY, clamped 1–12)
 }
 
 // repo root = apps/server/src -> up 3
 const repoRoot = resolve(import.meta.dirname, '..', '..', '..');
 
+// load repo-root .env (written by scripts/setup.mjs): KEY=VALUE lines, real env wins
+try {
+  for (const line of readFileSync(resolve(repoRoot, '.env'), 'utf8').split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+    if (!m) continue;
+    if (process.env[m[1]] === undefined) {
+      process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+    }
+  }
+} catch {
+  // no .env — defaults apply
+}
+
 export function makeConfig(dataDir?: string): Config {
   const dir = dataDir ?? process.env.STUDI0_DATA_DIR ?? resolve(repoRoot, 'data');
+  const chunkConcurrency = Number(process.env.STUDI0_MAX_CHUNK_CONCURRENCY);
   return {
     port: Number(process.env.PORT ?? 3001),
     host: '127.0.0.1',
@@ -36,10 +54,15 @@ export function makeConfig(dataDir?: string): Config {
     ladder: [1, 3, 7],
     allowedExt: ['.pdf', '.md'],
     maxFileBytes: 200 * 1024 * 1024,
-    ocPort: Number(process.env.OPENCODE_PORT ?? 44096),
+    ocPort: Number(process.env.OC_PORT ?? 44096),
     ocHost: '127.0.0.1',
+    vitePort: Number(process.env.VITE_PORT ?? 5173),
+    previewPort: Number(process.env.PREVIEW_PORT ?? 4173),
     oneshotTimeoutMs: 300_000,
     sseHeartbeatMs: 15_000,
     splitTargetBytes: Number(process.env.STUDI0_SPLIT_TARGET_BYTES ?? 15 * 1024 * 1024),
+    maxChunkConcurrency: Number.isFinite(chunkConcurrency)
+      ? Math.min(12, Math.max(1, chunkConcurrency))
+      : 4,
   };
 }

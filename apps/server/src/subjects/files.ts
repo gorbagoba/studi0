@@ -135,6 +135,7 @@ function runPython(
   args: string[],
   timeoutMs: number,
 ): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  const isWin = process.platform === 'win32';
   const run = (bin: string, a: string[]) =>
     new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
       const child = spawn(bin, a, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -156,13 +157,16 @@ function runPython(
         else child.kill();
       }, timeoutMs);
       timer.unref();
-      // spawn reports ENOENT asynchronously — fall back to the py launcher here
+      // spawn reports ENOENT asynchronously — walk the chain: POSIX distros name
+      // it python3 or python; Windows falls back to the py launcher
       child.on('error', (err: NodeJS.ErrnoException) => {
-        if (err.code === 'ENOENT' && bin === 'python') {
-          resolve(run('py', ['-3', ...a]));
+        if (err.code !== 'ENOENT') {
+          reject(err);
           return;
         }
-        reject(err);
+        if (bin === 'python3') resolve(run('python', a));
+        else if (bin === 'python' && isWin) resolve(run('py', ['-3', ...a]));
+        else reject(err);
       });
       child.on('close', (code) => {
         clearTimeout(timer);
@@ -173,7 +177,7 @@ function runPython(
         });
       });
     });
-  return run('python', args);
+  return run(isWin ? 'python' : 'python3', args);
 }
 
 /**

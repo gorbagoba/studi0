@@ -21,6 +21,7 @@ import { openDb } from '../src/db/index.js';
 import * as jobsRepo from '../src/db/repos/jobs.js';
 import { insertSubject } from '../src/db/repos/subjects.js';
 import { makeRunPipeline } from '../src/pipeline/runner.js';
+import { makeConfig } from '../src/config.js';
 
 const made: string[] = [];
 
@@ -50,7 +51,7 @@ describe('job pid bookkeeping', () => {
       child: { kill: () => undefined, stdout: null, stderr: null },
     });
     const subject = { id: 'subject-1', name: 'S', path: dir } as never;
-    const outcome = await makeRunPipeline(async () => 'ok', db)(
+    const outcome = await makeRunPipeline(async () => 'ok', db, makeConfig())(
       job,
       subject,
       () => undefined,

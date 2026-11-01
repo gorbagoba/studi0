@@ -4,11 +4,23 @@
 // verify the command line before taskkill; --force overrides for stubborn cases.
 import { execFileSync, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import fs from 'node:fs';
 
 const pExecFile = promisify(execFile);
 const isWin = process.platform === 'win32';
 const force = process.argv.includes('--force');
-const PORTS = [44096, 3001, 5173]; // serve, API, vite — serve first: it is the API's child
+
+// ports follow the app's .env when present (same keys setup writes)
+function envPort(key, fallback) {
+  try {
+    const line = fs.readFileSync(new URL('../.env', import.meta.url), 'utf8').split(/\r?\n/).find((l) => l.startsWith(`${key}=`));
+    const v = Number(line?.split('=')[1]);
+    return Number.isInteger(v) && v > 0 ? v : fallback;
+  } catch {
+    return fallback;
+  }
+}
+const PORTS = [envPort('OC_PORT', 44096), envPort('PORT', 3001), envPort('VITE_PORT', 5173)]; // serve, API, vite — serve first: it is the API's child
 const IDENTITY = /opencode|node|tsx|vite|pnpm/i;
 
 function pidsOnPort(port) {

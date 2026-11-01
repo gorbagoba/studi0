@@ -3,6 +3,7 @@ import { mkdir, writeFile, mkdtemp, rm, stat, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { makeHarness } from './helpers';
+import { makeConfig } from '../src/config.js';
 
 let h: Awaited<ReturnType<typeof makeHarness>>;
 
@@ -45,17 +46,16 @@ describe('subjects CRUD (T03)', () => {
       'utf8',
     );
     expect(synced).toBe(canonical);
-    // pipeline agent synced alongside the teacher agent
+    // pipeline agent synced alongside the teacher agent, with the concurrency
+    // placeholder interpolated (the canonical file ships with {{CHUNK_CONCURRENCY}})
     const pipelineSynced = await readFile(
       path.join(courseDir, '.opencode', 'agents', 'studi0-pipeline.md'),
       'utf8',
     );
-    expect(pipelineSynced).toBe(
-      await readFile(
-        path.resolve(import.meta.dirname, '../src/../agents/studi0-pipeline.md'),
-        'utf8',
-      ),
-    );
+    const pipelineCanonical = (
+      await readFile(path.resolve(import.meta.dirname, '../src/../agents/studi0-pipeline.md'), 'utf8')
+    ).replaceAll('{{CHUNK_CONCURRENCY}}', String(makeConfig().maxChunkConcurrency));
+    expect(pipelineSynced).toBe(pipelineCanonical);
     await rm(courseDir, { recursive: true, force: true });
   });
 
