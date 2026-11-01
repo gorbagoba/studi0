@@ -121,7 +121,7 @@ code {
 
 .app {
   display: grid;
-  grid-template-columns: 250px minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
   min-height: 100vh;
 }
 
@@ -132,6 +132,13 @@ code {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  width: 250px;
+}
+
+.sidebar-rail {
+  width: 3.5rem;
+  padding: 1rem 0.4rem;
+  align-items: center;
 }
 
 .brand-row {
