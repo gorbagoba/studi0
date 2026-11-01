@@ -19,7 +19,7 @@ pnpm dlx knip
 pnpm typecheck && pnpm lint && pnpm test && pnpm build
 ```
 
-Expected baseline: 73 tests (server 61 + web 12). Knip deletions that break a test mean the
+Expected baseline: **152 tests** (server 109 + web 43) — re-baseline this line after test-adding waves. Knip deletions that break a test mean the
 "dead" symbol was used by the test — restore the export, not the test.
 
 ## 3. Junk scan
@@ -40,6 +40,12 @@ pnpm dlx knip --include dependencies   # duplicate/unused deps (covered by step 
 ```
 
 - Every TODO must name its condition: `shortcut: <limit>, <when to upgrade>`. Fix orphans.
+- Secrets/dep-audit breadth pass: `codedev find_secrets` + `dep_vuln_scan` + `find_empty_catches`
+  (all zero as of 2026-11-01). Do NOT use codedev `security_scan` as a finding source — it flags
+  every template literal as "SQL injection" (~100 false positives; verified against real code:
+  React setters, path checks, PRAGMA constants) and every bundled `dist/` asset. Treat its output
+  as unverified leads at best. Real assurance = the security-review passes on changed surfaces
+  (see the reviews folded into git history + docs/TEST_RESULTS.md).
 
 ## 5. Commit
 
@@ -50,4 +56,5 @@ body. If everything was already clean, no commit.
 
 | Date | Findings removed |
 |---|---|
+| 2026-11-01 (sweep 2) | stale TODO(server) in FileBrowser (row ids landed), SubjectLogEvent export keyword, knip ignores for .d.mts decls + POSIX binaries; security breadth audit: 0 real findings |
 | 2026-11-01 | 15 (4 dead symbols, 10 export keywords, 1 duplicate schema alias) — knip baseline created |

@@ -12,7 +12,7 @@ import { toApiError } from './client';
 // ---- subject events (GET, EventSource) ----
 
 /** Runner build-log line pushed on the subject event stream (`log` event). */
-export interface SubjectLogEvent {
+interface SubjectLogEvent {
   line: string;
   at: string;
 }

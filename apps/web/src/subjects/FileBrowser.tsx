@@ -153,8 +153,7 @@ export function FileBrowser({
             </thead>
             <tbody>
               {tree.data.entries.map((entry) => {
-                // TODO(server): listTree must expose the files-table row id — until it does,
-                // file.id is undefined at runtime and move/rename/delete surface a 404
+                // material/ files carry their row id from the server (listTree joins file rows)
                 const file = entry as FileRow;
                 // menus (right-click + kebab) only on files inside material/
                 const isMaterial = dir === 'material';

@@ -7,4 +7,5 @@ graphify-out/
 .env
 qa-tmp/
 data-*/
+.codedev-mcp/
 *.tmp.mjs
