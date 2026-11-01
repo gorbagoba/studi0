@@ -3,9 +3,9 @@ import type { ID, Job, JobStatus } from '@studi0/shared';
 import { openSubjectEvents } from '../api/sse';
 import { useSubject } from '../api/hooks';
 import { useApp } from '../state/app';
+
 import type { Tab } from '../state/app';
 import { Badge } from '../components/Badge';
-import { EmptyState } from '../components/EmptyState';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { FileBrowser } from './FileBrowser';
 import { UploadZone } from './UploadZone';
@@ -148,20 +148,15 @@ export function SubjectPage({ subjectId }: { subjectId: ID }) {
           )}
           {tab === 'lessons' && (
             <Suspense fallback={TAB_FALLBACK}>
-              <div className="lessons-pane">
-                <LessonsList subjectId={subjectId} version={v.lesson} />
-                {lessonPath !== null ? (
+              <div className={`lessons-pane${lessonPath !== null ? ' lesson-open' : ''}`}>
+                {lessonPath === null && <LessonsList subjectId={subjectId} version={v.lesson} />}
+                {lessonPath !== null && (
                   <LessonViewer
                     subjectId={subjectId}
                     path={lessonPath}
                     version={v.lesson}
                     onClosed={closeLesson}
                     onLessonSaved={() => setV((x) => ({ ...x, lesson: x.lesson + 1 }))}
-                  />
-                ) : (
-                  <EmptyState
-                    title="Select a lesson"
-                    hint="Pick one from the list, or ask the teacher in Chat to write one."
                   />
                 )}
               </div>

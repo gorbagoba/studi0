@@ -44,6 +44,8 @@ export function Sidebar() {
   const [newGroupOpen, setNewGroupOpen] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
   const [menu, setMenu] = useState<MenuState | null>(null);
+  const [dragSubject, setDragSubject] = useState<Subject | null>(null);
+  const [dragOverGroup, setDragOverGroup] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [mergeResult, setMergeResult] = useState<{
     moved: string[];
@@ -212,6 +214,11 @@ export function Sidebar() {
         onOpen={() => selectSubject(s.id)}
         items={subjectMenuItems(s)}
         onMenu={openAt}
+        onDragStart={() => setDragSubject(s)}
+        onDragEnd={() => {
+          setDragSubject(null);
+          setDragOverGroup(null);
+        }}
       />
     );
   }
@@ -293,9 +300,6 @@ export function Sidebar() {
           <CopyRestartCommand />
         </p>
       )}
-      <button className="btn" onClick={() => setAddOpen(true)}>
-        Add subject
-      </button>
       {newGroupOpen ? (
         <form
           className="new-group"
@@ -324,7 +328,7 @@ export function Sidebar() {
       ) : (
         <button
           type="button"
-          className="btn btn-small"
+          className="btn new-group-btn"
           onClick={() => {
             setNewGroupOpen(true);
             setNewGroupName('');
@@ -333,6 +337,9 @@ export function Sidebar() {
           New group
         </button>
       )}
+      <button className="btn" onClick={() => setAddOpen(true)}>
+        Add subject
+      </button>
       {actionError !== null && <ErrorBanner message={actionError} />}
       {mergeResult !== null && (
         <div
@@ -356,7 +363,20 @@ export function Sidebar() {
           )}
         </div>
       )}
-      <nav aria-label="Subjects">
+      <nav
+        aria-label="Subjects"
+        onDragOver={(e) => {
+          if (dragSubject !== null) e.preventDefault();
+        }}
+        onDrop={(e) => {
+          if (dragSubject === null) return;
+          e.preventDefault();
+          const s = dragSubject;
+          setDragSubject(null);
+          setDragOverGroup(null);
+          if (s.groupId !== null) void run(() => renameSubject(s.id, { groupId: null }));
+        }}
+      >
         {subjects.loading ? (
           <p className="muted">Loading…</p>
         ) : (
@@ -366,10 +386,26 @@ export function Sidebar() {
               return (
                 <section key={g.id} className="group-section">
                   <div
-                    className="group-header"
+                    className={`group-header${dragOverGroup === g.id ? ' drag-over' : ''}`}
                     onContextMenu={(e) => {
                       e.preventDefault();
                       openAt(e.clientX, e.clientY, groupMenuItems(g));
+                    }}
+                    onDragOver={(e) => {
+                      if (dragSubject === null) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDragOverGroup(g.id);
+                    }}
+                    onDragLeave={() => setDragOverGroup((cur) => (cur === g.id ? null : cur))}
+                    onDrop={(e) => {
+                      if (dragSubject === null) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const s = dragSubject;
+                      setDragSubject(null);
+                      setDragOverGroup(null);
+                      if (s.groupId !== g.id) void run(() => renameSubject(s.id, { groupId: g.id }));
                     }}
                   >
                     <button
@@ -427,16 +463,23 @@ function SubjectRow({
   onOpen,
   items,
   onMenu,
+  onDragStart,
+  onDragEnd,
 }: {
   s: Subject;
   active: boolean;
   onOpen: () => void;
   items: MenuItem[];
   onMenu: (x: number, y: number, items: MenuItem[]) => void;
+  onDragStart: () => void;
+  onDragEnd: () => void;
 }) {
   return (
     <li
       className="subject-row"
+      draggable
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
       onContextMenu={(e) => {
         e.preventDefault();
         onMenu(e.clientX, e.clientY, items);

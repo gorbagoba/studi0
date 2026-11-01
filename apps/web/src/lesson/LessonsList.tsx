@@ -16,7 +16,7 @@ export function LessonsList({
   const lessons = useLessons(subjectId, version);
 
   return (
-    <nav aria-labelledby="lessons-title" className="panel lessons-list">
+    <nav aria-labelledby="lessons-title" className="lessons-list">
       <h3 id="lessons-title">Lessons</h3>
       {lessons.loading && <p className="muted">Loading…</p>}
       {lessons.error !== null && <ErrorBanner message={lessons.error} />}
@@ -24,16 +24,19 @@ export function LessonsList({
         (lessons.data.length === 0 ? (
           <EmptyState title="No lessons yet" hint="Ask the teacher in Chat to write one." />
         ) : (
-          <ul>
+          <div className="lesson-rows" role="list" aria-label="All lessons">
             {lessons.data.map((l) => (
-              <li key={l.id}>
-                <button className="lesson-item" onClick={() => openLesson(l.path)}>
-                  <span>{l.title}</span>
-                  <span className="muted">{formatDateTime(l.updatedAt)}</span>
+              <div key={l.id} role="listitem" className="lesson-row-wrap">
+                <button type="button" className="lesson-row" onClick={() => openLesson(l.path)}>
+                  <span className="lesson-row-title">{l.title}</span>
+                  <span className="lesson-row-meta">
+                    updated {formatDateTime(l.updatedAt)}
+                    {l.nodeTags.length > 0 ? ` · ${l.nodeTags.length} graph topics` : ''}
+                  </span>
                 </button>
-              </li>
+              </div>
             ))}
-          </ul>
+          </div>
         ))}
     </nav>
   );

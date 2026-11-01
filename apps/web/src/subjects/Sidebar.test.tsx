@@ -119,6 +119,33 @@ describe('Sidebar groups and menus', () => {
     await waitFor(() => expect(client.deleteGroup).toHaveBeenCalledWith('g1'));
   });
 
+  it('drag-and-drops an ungrouped subject onto a group header to move it', async () => {
+    vi.mocked(client.renameSubject).mockResolvedValue({} as never);
+    renderSidebar();
+    const row = await screen.findByRole('button', { name: 'DB Systems' });
+    fireEvent.dragStart(row);
+    const header = screen.getByText('MATH').closest('.group-header') as HTMLElement;
+    fireEvent.dragOver(header);
+    expect(header.className).toContain('drag-over');
+    fireEvent.drop(header);
+    await waitFor(() =>
+      expect(client.renameSubject).toHaveBeenCalledWith('s2', { groupId: 'g1' }),
+    );
+  });
+
+  it('drop on the sidebar background ungroups a subject', async () => {
+    vi.mocked(client.renameSubject).mockResolvedValue({} as never);
+    renderSidebar();
+    const row = await screen.findByRole('button', { name: 'Linear Algebra' });
+    fireEvent.dragStart(row);
+    const nav = screen.getByRole('navigation', { name: 'Subjects' });
+    fireEvent.dragOver(nav);
+    fireEvent.drop(nav);
+    await waitFor(() =>
+      expect(client.renameSubject).toHaveBeenCalledWith('s1', { groupId: null }),
+    );
+  });
+
   it('requires typing the subject name exactly to delete its files from disk', async () => {
     const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('linear algebra');
     vi.mocked(client.deleteSubjectFiles).mockResolvedValue({ ok: true });
