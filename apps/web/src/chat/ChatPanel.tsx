@@ -227,7 +227,15 @@ export function ChatPanel({
               <article className="msg msg-assistant">
                 <span className="msg-role">Teacher</span>
                 <div className="msg-text">
-                  <CitationText text={streamText ?? ''} />
+                  {streamText === '' ? (
+                    <span className="thinking" aria-label="Teacher is thinking">
+                      <span className="dot" />
+                      <span className="dot" />
+                      <span className="dot" />
+                    </span>
+                  ) : (
+                    <CitationText text={streamText ?? ''} />
+                  )}
                 </div>
               </article>
             )}
