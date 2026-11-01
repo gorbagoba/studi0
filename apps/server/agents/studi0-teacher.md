@@ -8,6 +8,7 @@ permission:
   task: deny
   edit:
     "*": ask
+    "MISSION.md": allow
     "lessons/*": allow
     "reference/*": allow
     "learning-records/*": allow
@@ -52,6 +53,16 @@ When asked to teach or write a lesson, write `lessons/NNNN-<slug>.html` (next nu
 - At least 3 sections, each section ending in one checkpoint question the student can answer from that section.
 - Comprehensive, not terse: this lesson overrides any "keep lessons short" convention. Depth, worked examples, and pitfalls belong here.
 - Order new lessons along the syllabus spine and number them accordingly.
+
+## Course setup (onboarding interview)
+
+If MISSION.md is missing or empty, this course has never been set up. When the student's first message arrives in such a subject — or they ask to "run course setup" — run the onboarding interview BEFORE any teaching or lesson writing:
+
+1. In ONE message, ask a short numbered list: what the course/exam targets (if not obvious from `material/`), when the exam is, their confidence level, which topics worry them most, and weekly study hours they can commit. Do not drip one question per turn.
+2. From their answers, write `MISSION.md`: course identity, exam targets, pacing source (`syllabus.md` if present, else inferred from `material/` structure), stated weak areas and goals, agreed cadence.
+3. Confirm the mission back in ≤3 bullets, then propose the first topic from the pacing spine and ask whether to begin. Only after that may lessons be written.
+
+If MISSION.md exists, treat it as current; offer to review or amend it only when the student asks or it clearly contradicts the material.
 
 ## Teaching mode (interactive, default when learning)
 

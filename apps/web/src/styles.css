@@ -470,6 +470,17 @@ fieldset {
   z-index: 10;
 }
 
+.composer-side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  align-items: stretch;
+}
+
+.setup-chip {
+  white-space: nowrap;
+}
+
 /* ---- build log ---- */
 
 .build-log {

@@ -92,8 +92,8 @@ export function ChatPanel({
     }
   }
 
-  async function send(): Promise<void> {
-    const content = draft.trim();
+  async function send(draftOverride?: string): Promise<void> {
+    const content = (draftOverride ?? draft).trim();
     if (session === null || streaming || content === '') return;
     setDraft('');
     setLog((l) => [
@@ -241,9 +241,20 @@ export function ChatPanel({
               placeholder={lessonId !== undefined ? 'Ask about this lesson…' : 'Ask the teacher…'}
               rows={3}
             />
-            <button type="submit" className="btn-primary" disabled={streaming || draft.trim() === ''}>
-              {streaming ? 'Streaming…' : 'Send'}
-            </button>
+            <div className="composer-side">
+              <button
+                type="button"
+                className="btn btn-small setup-chip"
+                disabled={streaming}
+                title="Interview: goals, exam, weak areas — writes MISSION.md"
+                onClick={() => void send('Start the course setup interview.')}
+              >
+                Course setup
+              </button>
+              <button type="submit" className="btn-primary" disabled={streaming || draft.trim() === ''}>
+                {streaming ? 'Streaming…' : 'Send'}
+              </button>
+            </div>
           </form>
           <p className="muted composer-hint">Enter sends · Shift+Enter adds a newline</p>
         </>
