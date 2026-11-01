@@ -213,6 +213,10 @@ code {
   font-size: 1rem;
 }
 
+.setup-form h3 {
+  font-size: 2.4rem;
+}
+
 /* ---- tabs ---- */
 
 .tabs {
