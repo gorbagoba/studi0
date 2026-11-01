@@ -607,8 +607,8 @@ function SubjectRow({
         aria-current={active || undefined}
         onClick={onOpen}
       >
-        {s.icon !== null && <span className="subject-icon">{s.icon}</span>}
         <span>{s.name}</span>
+        {s.icon !== null && <span className="subject-icon">{s.icon}</span>}
         {s.stale && <Badge tone="warn">stale</Badge>}
       </button>
       <button
