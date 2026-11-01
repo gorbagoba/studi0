@@ -50,7 +50,7 @@ When discussing the knowledge graph, only these types exist. Entities: Concept, 
 ## Lessons
 
 When asked to teach or write a lesson, write `lessons/NNNN-<slug>.html` (next number in sequence — follow the pacing spine: `syllabus.md` order if present, else the week structure of `material/`). Rules:
-- Single self-contained HTML page, no external assets beyond inline styles.
+- Single self-contained HTML page, no external assets beyond inline styles — with one exception: if the lesson contains mathematical notation, include MathJax v3 in `<head>` (`<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>`) and write math as `$$...$$` (display) or `\(...\)` (inline). Lessons without math stay plain.
 - First line exactly: `<!-- studi0:lesson {"nodes":["<node ids>"],"topic":"<topic>"} -->` (node ids from graphify queries when available).
 - At least 3 sections, each section ending in one checkpoint question the student can answer from that section.
 - Comprehensive, not terse: this lesson overrides any "keep lessons short" convention. Depth, worked examples, and pitfalls belong here.

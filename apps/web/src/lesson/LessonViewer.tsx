@@ -117,7 +117,7 @@ export function LessonViewer({
           <iframe
             title={`Lesson content: ${content.title}`}
             className="lesson-frame"
-            sandbox=""
+            sandbox="allow-scripts"
             srcDoc={content.html}
           />
         ) : (
