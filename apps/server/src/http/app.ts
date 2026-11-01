@@ -50,17 +50,33 @@ export function buildApp(opts: { dataDir?: string; dbPath?: string } = {}): Buil
 
   // CSRF-class guard: drive-by POSTs from any website. Browsers always send
   // Origin/Sec-Fetch-Site on such requests; header-absent clients (curl, tests) pass.
+  // The Host allowlist additionally blocks DNS-rebinding pages, whose fetches are
+  // legitimately "same-origin" (Fetch Metadata cannot see them) but carry an
+  // attacker-controlled Host header they cannot spoof.
   app.addHook('onRequest', async (req, reply) => {
-    if (req.method !== 'POST' && req.method !== 'PUT' && req.method !== 'PATCH' && req.method !== 'DELETE') {
-      return;
-    }
+    const mutating = req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH' || req.method === 'DELETE';
+    if (!mutating) return;
+    const reject = () =>
+      reply.status(403).send({ error: { code: 'VALIDATION', message: 'cross-origin request rejected' } });
+    const allowedHosts = [
+      `127.0.0.1:${cfg.port}`,
+      `localhost:${cfg.port}`,
+      '127.0.0.1:5173',
+      'localhost:5173',
+      '127.0.0.1:4173',
+      'localhost:4173',
+      // light-my-request's default Host in tests — localhost itself is trusted
+      'localhost:80',
+      '127.0.0.1:80',
+    ];
+    const host = req.headers.host ?? '';
+    if (!allowedHosts.includes(host)) return reject();
     const origin = req.headers.origin;
     const site = req.headers['sec-fetch-site'];
     if (origin === undefined && site === undefined) return;
-    if (origin === 'http://127.0.0.1:5173' || site === 'same-origin' || site === 'none') return;
-    return reply.status(403).send({
-      error: { code: 'VALIDATION', message: 'cross-origin request rejected' },
-    });
+    const allowedOrigins = allowedHosts.map((h) => `http://${h}`);
+    if (origin !== undefined && !allowedOrigins.includes(origin)) return reject();
+    if (site === 'cross-site' || site === 'same-site') return reject();
   });
 
   app.register(multipart, {

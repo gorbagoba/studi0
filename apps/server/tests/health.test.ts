@@ -8,13 +8,16 @@ afterEach(async () => {
 });
 
 describe('GET /api/health', () => {
-  it('returns ok plus managed opencode status', async () => {
+  it('returns ok, managed opencode status, db probe, uptime and active jobs', async () => {
     h = await makeHarness();
     const res = await h.app.inject({ method: 'GET', url: '/api/health' });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({
-      ok: true,
-      opencode: { running: false, pid: null, port: 44096, healthy: false },
-    });
+    const body = res.json() as Record<string, unknown>;
+    expect(body.ok).toBe(true);
+    expect(body.opencode).toEqual({ running: false, pid: null, port: 44096, healthy: false });
+    expect(body.db).toBe('ok');
+    expect(Number.isInteger(body.uptime_s)).toBe(true);
+    expect(typeof body.probed_at).toBe('string');
+    expect(body.jobs).toEqual([]);
   });
 });

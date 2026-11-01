@@ -1,5 +1,5 @@
 ﻿import { execFile } from 'node:child_process';
-import { spawnArgs, killTree, isAlive } from '../util/proc.js';
+import { spawnArgs, killTree, isAlive, commandLineMentions } from '../util/proc.js';
 import { makeOcClient, authHeaders, type OcClient } from './sdk.js';
 import { HttpError } from '../util/errors.js';
 import type { Config } from '../config.js';
@@ -41,7 +41,17 @@ export class OpencodeManager {
   private async cleanupZombie(): Promise<void> {
     if (!(await this.probeAuth(false))) return;
     const pid = await pidListeningOn(this.cfg.ocPort);
-    if (pid) await killTree(pid, 5000);
+    if (pid) {
+      // trust follows identity, not possession: only kill if it IS an opencode
+      if (await commandLineMentions(pid, 'opencode')) {
+        await killTree(pid, 5000);
+      } else {
+        console.error(
+          `port ${this.cfg.ocPort} held by pid ${pid} which is not opencode — refusing to kill`,
+        );
+        return; // someone else's server: do not boot over it
+      }
+    }
     // give the port a moment to free up
     for (let i = 0; i < 20; i++) {
       if (!(await this.probeAuth(false))) return;

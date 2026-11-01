@@ -36,9 +36,10 @@ export async function registerHealthRoutes(app: FastifyInstance, ctx: Ctx): Prom
     };
   });
 
-  // restart only the teacher service; the API process itself keeps running
+  // restart only the teacher service; the API process itself keeps running.
+  // boot() alone is the atomic operation: cleanupZombie + start (stop+boot could
+  // leave the teacher down if boot fails, and races the probe loop's own reboot)
   app.post('/api/teacher/restart', async (_req, reply) => {
-    await ctx.oc.stop();
     await ctx.oc.boot();
     return reply.code(200).send({ ok: true, opencode: ctx.oc.status() });
   });

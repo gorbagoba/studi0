@@ -32,6 +32,7 @@ export function SettingsPage() {
   }, [probe]);
 
   async function onRestartTeacher() {
+    if (!window.confirm('Restart the teacher? Active chat turns are interrupted.')) return;
     setRestarting(true);
     setNote(null);
     setError(null);
@@ -46,7 +47,8 @@ export function SettingsPage() {
     }
   }
 
-  async function onCancelJob(id: string) {
+  async function onCancelJob(id: string, label: string) {
+    if (!window.confirm(`Cancel ${label}? In-flight work is lost; cached chunks survive.`)) return;
     setNote(null);
     try {
       await cancelJob(id);
@@ -156,7 +158,7 @@ export function SettingsPage() {
                 <button
                   type="button"
                   className="btn btn-small"
-                  onClick={() => void onCancelJob(j.id)}
+                  onClick={() => void onCancelJob(j.id, `${j.subject} ${j.kind}`)}
                 >
                   Cancel
                 </button>

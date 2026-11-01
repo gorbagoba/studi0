@@ -48,4 +48,26 @@ describe('origin guard on mutating routes', () => {
     });
     expect(res.statusCode).toBe(200);
   });
+
+  it('blocks DNS-rebinding POSTs: same-origin metadata but a foreign Host', async () => {
+    h = await makeHarness();
+    const res = await h.app.inject({
+      method: 'POST',
+      url: '/api/subjects',
+      payload: { name: 'Rebind' },
+      headers: { host: 'rebind.attacker.com:5173', 'sec-fetch-site': 'same-origin' },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('blocks POSTs that claim our Host but carry a foreign Origin', async () => {
+    h = await makeHarness();
+    const res = await h.app.inject({
+      method: 'POST',
+      url: '/api/subjects',
+      payload: { name: 'Spoofed' },
+      headers: { host: '127.0.0.1:5173', origin: 'http://evil.example' },
+    });
+    expect(res.statusCode).toBe(403);
+  });
 });

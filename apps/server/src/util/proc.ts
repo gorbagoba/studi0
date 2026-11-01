@@ -154,8 +154,33 @@ async function descendantsOf(pid: string | number): Promise<string[]> {
   }
 }
 
-export function isAlive(pid: string | number): boolean {
+/**
+ * Does the process's own command line mention `needle` (case-insensitive)?
+ * Ownership check before destructive ops: a port-held PID proves possession,
+ * not identity. Non-Windows reads /proc; Windows asks CIM. Errors → false.
+ */
+export async function commandLineMentions(pid: string | number, needle: string): Promise<boolean> {
   try {
+    if (isWin) {
+      const out = await new Promise<string>((resolve, reject) => {
+        execFile(
+          'powershell.exe',
+          ['-NoProfile', '-Command', `(Get-CimInstance Win32_Process -Filter "ProcessId=${Number(pid)}").CommandLine`],
+          { timeout: 5000 },
+          (err, stdout) => (err ? reject(err) : resolve(String(stdout))),
+        );
+      });
+      return out.toLowerCase().includes(needle.toLowerCase());
+    }
+    const { readFile } = await import('node:fs/promises');
+    const cmdline = await readFile(`/proc/${pid}/cmdline`, 'utf8');
+    return cmdline.toLowerCase().includes(needle.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+export function isAlive(pid: string | number): boolean {  try {
     process.kill(Number(pid), 0);
     return true;
   } catch {

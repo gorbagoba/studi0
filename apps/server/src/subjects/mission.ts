@@ -8,9 +8,17 @@ export const SETUP_BEGIN = '<!-- studi0:form-setup v1 -->';
 const SETUP_END = '<!-- end studi0:form-setup -->';
 
 /** Render the form answers as MISSION.md bullet lines — blanks are omitted entirely. */
-export function renderSetupSection(body: CourseSetupBody): string {
+function renderSetupSection(body: CourseSetupBody): string {
+  // neutralize the section's own delimiters so a value can never splice the
+  // block early (the teacher trusts text inside the markers as student data)
+  const clean = (v: string) =>
+    v
+      .trim()
+      .replace(/\r?\n/g, ' · ')
+      .replaceAll('<!--', '\\<!--')
+      .replaceAll('-->', '--\\>');
   const line = (label: string, value: string) =>
-    value.trim() ? `- **${label}:** ${value.trim().replace(/\r?\n/g, ' · ')}` : null;
+    value.trim() ? `- **${label}:** ${clean(value)}` : null;
   const bullets = [
     line('Course / exam', body.courseIdentity),
     line('Exam date', body.examDate),
@@ -39,7 +47,7 @@ export function renderSetupSection(body: CourseSetupBody): string {
 }
 
 /** Replace any existing form-setup block in a MISSION.md, or append the section. */
-export function upsertSetupSection(mission: string | null, section: string): string {
+function upsertSetupSection(mission: string | null, section: string): string {
   if (mission === null || mission.trim() === '') {
     return `# MISSION\n\n${section}`;
   }
@@ -47,10 +55,15 @@ export function upsertSetupSection(mission: string | null, section: string): str
   if (begin >= 0) {
     const end = mission.indexOf(SETUP_END, begin);
     if (end >= 0) {
-      // keep everything before the section heading line, splice the new block in
-      const before = mission.slice(0, mission.lastIndexOf('## Student setup', begin));
-      return before + section + mission.slice(end + SETUP_END.length).replace(/^\r?\n/, '\n');
+      // cut from the section heading; if it was hand-edited away, cut from the
+      // marker's own line — never slice(0, -1) on a failed lastIndexOf
+      const headingIdx = mission.lastIndexOf('## Student setup', begin);
+      const cutStart = headingIdx >= 0 ? headingIdx : mission.lastIndexOf('\n', begin) + 1;
+      return mission.slice(0, cutStart) + section + mission.slice(end + SETUP_END.length).replace(/^\r?\n/, '\n');
     }
+    // BEGIN without END (hand-truncated file): replace the remainder wholesale
+    const lineStart = mission.lastIndexOf('\n', begin) + 1;
+    return mission.slice(0, lineStart) + section;
   }
   return mission.replace(/\s*$/, '\n\n') + section;
 }
