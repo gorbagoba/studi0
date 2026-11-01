@@ -1,6 +1,7 @@
 import { buildApp } from './http/app.js';
 import { ensureLayout, syncTeacherAgent } from './fs/layout.js';
 import { listSubjects } from './db/repos/subjects.js';
+import { detectAndIndexLessons } from './teacher/lessons.js';
 
 const { app, ctx } = buildApp();
 // resync the canonical teacher agent file into every registered subject
@@ -8,6 +9,8 @@ for (const subject of listSubjects(ctx.db)) {
   try {
     await ensureLayout(subject.path);
     await syncTeacherAgent(subject.path);
+    // index pre-existing lessons (e.g. teach-skill workspaces from before registration)
+    await detectAndIndexLessons(ctx.db, subject, new Map(), ctx.events);
   } catch {
     // subject folder may be temporarily unavailable (unplugged drive) — keep booting
   }
