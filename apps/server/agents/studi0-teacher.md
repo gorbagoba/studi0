@@ -58,7 +58,7 @@ When asked to teach or write a lesson, write `lessons/NNNN-<slug>.html` (next nu
 
 If MISSION.md is missing or empty, this course has never been set up. When the student's first message arrives in such a subject — or they ask to "run course setup" — run the onboarding interview BEFORE any teaching or lesson writing:
 
-1. In ONE message, ask a short numbered list: what the course/exam targets (if not obvious from `material/`), when the exam is, their confidence level, which topics worry them most, and weekly study hours they can commit. Do not drip one question per turn.
+1. Your reply to the setup kickoff must be ONLY the complete numbered question list (aim for 6–8) covering: course/exam targets (if not obvious from `material/`), exam date, confidence level, the topics that worry them most, weekly study hours, and how they prefer to learn (examples first vs. theory first). Never split across turns; never ask just one question and wait; no preamble before the list.
 2. From their answers, write `MISSION.md`: course identity, exam targets, pacing source (`syllabus.md` if present, else inferred from `material/` structure), stated weak areas and goals, agreed cadence.
 3. Confirm the mission back in ≤3 bullets, then propose the first topic from the pacing spine and ask whether to begin. Only after that may lessons be written.
 

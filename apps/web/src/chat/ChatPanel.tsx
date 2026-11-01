@@ -247,7 +247,11 @@ export function ChatPanel({
                 className="btn btn-small setup-chip"
                 disabled={streaming}
                 title="Interview: goals, exam, weak areas — writes MISSION.md"
-                onClick={() => void send('Start the course setup interview.')}
+                onClick={() =>
+                  void send(
+                    'Start the course setup interview. Ask me every onboarding question in ONE message as a numbered list — I will answer them all in one batch.',
+                  )
+                }
               >
                 Course setup
               </button>
