@@ -724,8 +724,14 @@ fieldset legend {
   cursor: pointer;
 }
 
-.group-header.drag-over {
-  outline: 2px dashed var(--muted);
+/* collapsed rail: stack the footer icons vertically (expanded footer stays horizontal) */
+.sidebar-rail .sidebar-footer {
+  flex-direction: column;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.group-header.drag-over {  outline: 2px dashed var(--muted);
   outline-offset: -2px;
   background: var(--accent-bg);
 }
