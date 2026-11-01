@@ -1,0 +1,153 @@
+import { useState } from 'react';
+import type { FormEvent } from 'react';
+import type { CourseSetupBody } from '@studi0/shared';
+import { displayError, setupCourse } from '../api/client';
+import { ErrorBanner } from '../components/ErrorBanner';
+
+const EMPTY: CourseSetupBody = {
+  courseIdentity: '',
+  examDate: '',
+  examScope: '',
+  confidence: '',
+  weakTopics: '',
+  hoursPerWeek: '',
+  learningStyle: '',
+  notesToTeacher: '',
+};
+
+/** Course setup form — answers land verbatim in MISSION.md; blanks are omitted. */
+export function CourseSetupForm({ subjectId }: { subjectId: string }) {
+  const [body, setBody] = useState<CourseSetupBody>(EMPTY);
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const set = (k: keyof CourseSetupBody) => (v: string) => {
+    setSaved(false);
+    setBody((b) => ({ ...b, [k]: v }));
+  };
+
+  async function onSubmit(e: FormEvent): Promise<void> {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await setupCourse(subjectId, body);
+      setSaved(true);
+    } catch (err) {
+      setError(displayError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section aria-labelledby="setup-title" className="panel">
+      <h3 id="setup-title">Course setup</h3>
+      <p className="muted">
+        Your answers are written verbatim into <code>MISSION.md</code> — the teacher reads it before
+        every session. Every field is optional; blanks are simply omitted.
+      </p>
+      {error !== null && <ErrorBanner message={error} />}
+      {saved && (
+        <p className="banner banner-ok" role="status">
+          Mission written. Open <strong>Chat</strong> and ask the teacher to propose your first lesson
+          plan — retaking this form later updates the same section.
+        </p>
+      )}
+      <form onSubmit={(e) => void onSubmit(e)}>
+        <fieldset>
+          <legend>The course &amp; exam</legend>
+          <label className="field">
+            Course &amp; exam
+            <input
+              value={body.courseIdentity}
+              onChange={(e) => set('courseIdentity')(e.target.value)}
+              placeholder="e.g. CS2107 — Introduction to AI"
+            />
+          </label>
+          <label className="field">
+            When is the exam?
+            <input
+              value={body.examDate}
+              onChange={(e) => set('examDate')(e.target.value)}
+              placeholder="e.g. 24 Nov · 60% of final grade"
+            />
+          </label>
+          <label className="field">
+            What does the exam cover?
+            <textarea
+              rows={2}
+              value={body.examScope}
+              onChange={(e) => set('examScope')(e.target.value)}
+              placeholder="Topic areas, weighting, open/closed book…"
+            />
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Where you stand</legend>
+          <label className="field">
+            Confidence going in
+            <select value={body.confidence} onChange={(e) => set('confidence')(e.target.value)}>
+              <option value="">—</option>
+              <option value="lost">Lost — start from the basics</option>
+              <option value="shaky">Shaky — know some of it</option>
+              <option value="okay">Okay — need exam polish</option>
+              <option value="solid">Solid — targeted practice only</option>
+            </select>
+          </label>
+          <label className="field">
+            Which topics worry you most?
+            <textarea
+              rows={2}
+              value={body.weakTopics}
+              onChange={(e) => set('weakTopics')(e.target.value)}
+              placeholder="e.g. Dijkstra vs Bellman-Ford — when to use which"
+            />
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>How we&apos;ll work</legend>
+          <label className="field">
+            Study hours per week
+            <input
+              value={body.hoursPerWeek}
+              onChange={(e) => set('hoursPerWeek')(e.target.value)}
+              placeholder="e.g. 6–8"
+            />
+          </label>
+          <label className="field">
+            Teaching style that works for you
+            <select value={body.learningStyle} onChange={(e) => set('learningStyle')(e.target.value)}>
+              <option value="">—</option>
+              <option value="examples-first">Examples first, then theory</option>
+              <option value="theory-first">Theory first, then examples</option>
+              <option value="mixed">Mixed</option>
+            </select>
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Things I need to tell the teacher</legend>
+          <label className="field">
+            Anything urgent or important — leave blank if nothing
+            <textarea
+              rows={3}
+              value={body.notesToTeacher}
+              onChange={(e) => set('notesToTeacher')(e.target.value)}
+              placeholder="Deadlines, circumstances, corrections to how I study, topics the lecturer emphasized…"
+            />
+          </label>
+        </fieldset>
+
+        <div className="btn-row">
+          <button type="submit" className="btn-primary" disabled={busy}>
+            {busy ? 'Writing…' : 'Write to MISSION.md'}
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}

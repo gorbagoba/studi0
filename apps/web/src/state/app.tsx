@@ -2,7 +2,7 @@ import { createContext, useContext, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ID } from '@studi0/shared';
 
-export type Tab = 'material' | 'graph' | 'lessons' | 'chat' | 'practice';
+export type Tab = 'material' | 'graph' | 'lessons' | 'chat' | 'practice' | 'setup';
 
 interface AppState {
   subjectId: ID | null;

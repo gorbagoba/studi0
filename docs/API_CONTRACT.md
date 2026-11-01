@@ -152,6 +152,9 @@ No files are copied or moved (AC1).
 `GET /api/subjects/:id/graph/log` — tail (last 300 lines) of the pipeline build log (`graphify-out/build.log`), written by the runner with relative timestamps for every protocol/raw output line.
 → `200 { log: string | null }`
 
+`POST /api/subjects/:id/setup` — course setup form answers, written verbatim into the delimited `## Student setup (from form)` block of `MISSION.md` (idempotent: retakes replace the block, teacher-written content is preserved; blank fields omitted; all fields optional).
+→ `200 { ok: true }` · `400 VALIDATION`
+
 `GET /api/subjects/:id/wiki` — list pages (graphify-generated, in `graphify-out/wiki/`).
 → `200 { pages: { name: string; updatedAt: ISO }[] }`
 

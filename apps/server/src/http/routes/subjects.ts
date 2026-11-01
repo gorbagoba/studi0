@@ -1,7 +1,8 @@
 ﻿import type { FastifyInstance } from 'fastify';
 import type { Ctx } from '../../context.js';
 import { parseWith } from '../validate.js';
-import { createSubjectBodySchema, renameSubjectBodySchema } from '@studi0/shared';
+import { courseSetupBodySchema, createSubjectBodySchema, renameSubjectBodySchema } from '@studi0/shared';
+import { applySetupToMission } from '../../subjects/mission.js';
 import * as subjectsRepo from '../../db/repos/subjects.js';
 import {
   requireSubject,
@@ -17,6 +18,13 @@ export async function registerSubjectRoutes(app: FastifyInstance, ctx: Ctx): Pro
   const { db } = ctx;
 
   app.get('/api/subjects', async () => listSubjectDtos(db));
+
+  app.post('/api/subjects/:id/setup', async (req) => {
+    const subject = requireSubject(db, (req.params as { id: string }).id);
+    const body = parseWith(courseSetupBodySchema, req.body ?? {});
+    await applySetupToMission(subject.path, body);
+    return { ok: true };
+  });
 
   app.post('/api/subjects', async (req, reply) => {
     const body = parseWith(createSubjectBodySchema, req.body);

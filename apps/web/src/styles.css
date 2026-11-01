@@ -327,6 +327,25 @@ fieldset {
   margin: 0.5rem 0;
 }
 
+fieldset legend {
+  font-weight: 600;
+  margin: 0.4rem 0 0.2rem;
+}
+
+.field {
+  display: block;
+  font-weight: 400;
+  margin: 0.4rem 0;
+}
+
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  max-width: 560px;
+  margin-top: 0.2rem;
+}
+
 .radio-row {
   display: flex;
   gap: 0.5rem;

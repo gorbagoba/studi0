@@ -3,6 +3,7 @@ import type {
   ApiErrorPayload,
   ChatMessage,
   ChatSession,
+  CourseSetupBody,
   CreateSessionRequest,
   DueResponse,
   ErrorCode,
@@ -91,6 +92,9 @@ export const deleteSubject = (id: ID): Promise<void> => send<void>('DELETE', `/a
 
 export const getBuildLog = (id: ID): Promise<{ log: string | null }> =>
   api<{ log: string | null }>(`/api/subjects/${id}/graph/log`);
+
+export const setupCourse = (id: ID, body: CourseSetupBody): Promise<{ ok: boolean }> =>
+  send<{ ok: boolean }>('POST', `/api/subjects/${id}/setup`, body);
 
 export const getSubject = (id: ID): Promise<SubjectDetail> =>
   api<SubjectDetail>(`/api/subjects/${id}`);

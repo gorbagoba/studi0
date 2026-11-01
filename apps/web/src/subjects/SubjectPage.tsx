@@ -17,6 +17,7 @@ import { LessonsList } from '../lesson/LessonsList';
 import { LessonViewer } from '../lesson/LessonViewer';
 import { ChatPanel } from '../chat/ChatPanel';
 import { PracticePage } from '../practice/PracticePage';
+import { CourseSetupForm } from './CourseSetupForm';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'material', label: 'Material' },
@@ -24,6 +25,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'lessons', label: 'Lessons' },
   { id: 'chat', label: 'Chat' },
   { id: 'practice', label: 'Practice' },
+  { id: 'setup', label: 'Setup' },
 ];
 
 // lifecycle order — a snapshot must never move backwards through it
@@ -92,6 +94,7 @@ export function SubjectPage({ subjectId }: { subjectId: ID }) {
               </button>
             ))}
           </nav>
+          {tab === 'setup' && <CourseSetupForm subjectId={subjectId} />}
           {tab === 'material' && (
             <div className="stack">
               <UploadZone
