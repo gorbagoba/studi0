@@ -7,7 +7,6 @@ import { ErrorBanner } from '../components/ErrorBanner';
 const EMPTY: CourseSetupBody = {
   courseIdentity: '',
   examDate: '',
-  examScope: '',
   confidence: '',
   weakTopics: '',
   hoursPerWeek: '',
@@ -55,34 +54,27 @@ export function CourseSetupForm({ subjectId }: { subjectId: string }) {
           plan — retaking this form later updates the same section.
         </p>
       )}
-      <form onSubmit={(e) => void onSubmit(e)}>
+      <form className="setup-form" onSubmit={(e) => void onSubmit(e)}>
         <fieldset>
           <legend>The course &amp; exam</legend>
-          <label className="field">
-            Course &amp; exam
-            <input
-              value={body.courseIdentity}
-              onChange={(e) => set('courseIdentity')(e.target.value)}
-              placeholder="e.g. CS2107 — Introduction to AI"
-            />
-          </label>
-          <label className="field">
-            When is the exam?
-            <input
-              value={body.examDate}
-              onChange={(e) => set('examDate')(e.target.value)}
-              placeholder="e.g. 24 Nov · 60% of final grade"
-            />
-          </label>
-          <label className="field">
-            What does the exam cover?
-            <textarea
-              rows={2}
-              value={body.examScope}
-              onChange={(e) => set('examScope')(e.target.value)}
-              placeholder="Topic areas, weighting, open/closed book…"
-            />
-          </label>
+          <div className="field-grid">
+            <label className="field">
+              Course &amp; exam
+              <input
+                value={body.courseIdentity}
+                onChange={(e) => set('courseIdentity')(e.target.value)}
+                placeholder="e.g. CS2107 — Introduction to AI"
+              />
+            </label>
+            <label className="field">
+              When is the exam?
+              <input
+                value={body.examDate}
+                onChange={(e) => set('examDate')(e.target.value)}
+                placeholder="e.g. 24 Nov · 60% of final grade"
+              />
+            </label>
+          </div>
         </fieldset>
 
         <fieldset>
@@ -110,26 +102,28 @@ export function CourseSetupForm({ subjectId }: { subjectId: string }) {
 
         <fieldset>
           <legend>How we&apos;ll work</legend>
-          <label className="field">
-            Study hours per week
-            <input
-              value={body.hoursPerWeek}
-              onChange={(e) => set('hoursPerWeek')(e.target.value)}
-              placeholder="e.g. 6–8"
-            />
-          </label>
-          <label className="field">
-            Teaching style that works for you
-            <select value={body.learningStyle} onChange={(e) => set('learningStyle')(e.target.value)}>
-              <option value="">—</option>
-              <option value="examples-first">Examples first, then theory</option>
-              <option value="theory-first">Theory first, then examples</option>
-              <option value="mixed">Mixed</option>
-            </select>
-          </label>
+          <div className="field-grid">
+            <label className="field">
+              Study hours per week
+              <input
+                value={body.hoursPerWeek}
+                onChange={(e) => set('hoursPerWeek')(e.target.value)}
+                placeholder="e.g. 6–8"
+              />
+            </label>
+            <label className="field">
+              Teaching style that works for you
+              <select value={body.learningStyle} onChange={(e) => set('learningStyle')(e.target.value)}>
+                <option value="">—</option>
+                <option value="examples-first">Examples first, then theory</option>
+                <option value="theory-first">Theory first, then examples</option>
+                <option value="mixed">Mixed</option>
+              </select>
+            </label>
+          </div>
         </fieldset>
 
-        <fieldset>
+        <fieldset className="field-urgent">
           <legend>Things I need to tell the teacher</legend>
           <label className="field">
             Anything urgent or important — leave blank if nothing

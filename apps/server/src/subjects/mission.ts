@@ -14,7 +14,6 @@ export function renderSetupSection(body: CourseSetupBody): string {
   const bullets = [
     line('Course / exam', body.courseIdentity),
     line('Exam date', body.examDate),
-    line('Exam scope', body.examScope),
     line(
       'Confidence',
       {

@@ -202,7 +202,6 @@ export type OpencodeHealth = z.infer<typeof opencodeHealthSchema>;
 export const courseSetupBodySchema = z.object({
   courseIdentity: z.string().max(200).default(''),
   examDate: z.string().max(80).default(''),
-  examScope: z.string().max(2000).default(''),
   confidence: z.enum(['', 'lost', 'shaky', 'okay', 'solid']).default(''),
   weakTopics: z.string().max(1000).default(''),
   hoursPerWeek: z.string().max(30).default(''),
