@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent } from 'react';
 import type { ChatMessage, ChatSession, ID } from '@studi0/shared';
-import { ApiError, createSession, displayError, getMessages, getSessions, renameChatSession } from '../api/client';
+import { ApiError, cleanChatSessions, createSession, deleteChatSession, displayError, getMessages, getSessions, renameChatSession } from '../api/client';
 import { postChatStream } from '../api/sse';
 import { CitationText } from '../lesson/CitationText';
 import { ErrorBanner } from '../components/ErrorBanner';
@@ -45,9 +45,8 @@ export function ChatPanel({
       setLog(history.map((m) => ({ kind: 'message', message: m })));
     } catch (e) {
       if (e instanceof ApiError && e.code === 'SESSION_GONE') {
-        // opencode lost the session — start a fresh one transparently
-        const fresh = await createSession(subjectId, lessonId !== undefined ? { lessonId } : {});
-        setSession(fresh);
+        // opencode lost the session — go sessionless; the next send starts fresh lazily
+        setSession(null);
         setLog([]);
       } else {
         setError(displayError(e));
@@ -78,9 +77,8 @@ export function ChatPanel({
         if (stopped) return;
         setSessions(all);
         const match = all.find((s) => s.active && (lessonId !== undefined ? s.lessonId === lessonId : s.lessonId === null));
-        const s = match ?? (await createSession(subjectId, lessonId !== undefined ? { lessonId } : {}));
-        if (stopped) return;
-        await openSession(s);
+        if (match) await openSession(match);
+        // no match: stay sessionless — the first message creates the session lazily
       } catch (e) {
         if (!stopped) setError(displayError(e));
       } finally {
@@ -103,20 +101,39 @@ export function ChatPanel({
     }
   }
 
-  async function newChat(): Promise<void> {
+  async function deleteChat(s: ChatSession): Promise<void> {
     setError(null);
     try {
-      const s = await createSession(subjectId, lessonId !== undefined ? { lessonId } : {});
-      setSessions((all) => [s, ...all]);
-      await openSession(s);
+      await deleteChatSession(s.id);
+      setSessions((all) => all.filter((x) => x.id !== s.id));
+      if (session?.id === s.id) setEntered(false);
     } catch (e) {
       setError(displayError(e));
     }
   }
 
+  async function cleanChats(): Promise<void> {
+    setError(null);
+    try {
+      const { removed } = await cleanChatSessions(subjectId);
+      if (removed > 0) setSessions((all) => all.filter((x) => x.messageCount !== 0));
+      if (session !== null && session.messageCount === 0) setEntered(false);
+    } catch (e) {
+      setError(displayError(e));
+    }
+  }
+
+  async function newChat(): Promise<void> {
+    // lazy: entering a blank chat creates nothing — the session is created on first send
+    setError(null);
+    setSession(null);
+    setLog([]);
+    setEntered(true);
+  }
+
   async function send(draftOverride?: string): Promise<void> {
     const content = (draftOverride ?? draft).trim();
-    if (session === null || streaming || content === '') return;
+    if (streaming || content === '') return;
     setDraft('');
     setLog((l) => [
       ...l,
@@ -133,8 +150,16 @@ export function ChatPanel({
     streamRef.current = '';
     setStreamText('');
     try {
+      // lazy session creation: the first message of a chat mints the session
+      let target: ChatSession | null = session;
+      if (target === null) {
+        const created = await createSession(subjectId, lessonId !== undefined ? { lessonId } : {});
+        target = created;
+        setSessions((all) => (all.some((x) => x.id === created.id) ? all : [created, ...all]));
+        setSession(created);
+      }
       await postChatStream(
-        session.id,
+        target.id,
         { content, ...(lessonId !== undefined ? { lessonId } : {}) },
         {
           onToken: (t) => {
@@ -226,6 +251,8 @@ export function ChatPanel({
             onSelect={(s) => void openSession(s)}
             onNew={() => void newChat()}
             onRename={(s, t) => void renameChat(s, t)}
+            onDelete={(s) => void deleteChat(s)}
+            onClean={() => void cleanChats()}
           />
         )
       ) : booting ? (
@@ -233,12 +260,32 @@ export function ChatPanel({
           Connecting to the teacher…
         </p>
       ) : session === null ? (
-        <p className="muted">
-          No chat session available.{' '}
-          <button className="btn" onClick={() => void newChat()}>
-            Start a new chat
-          </button>
-        </p>
+        // lazy: a sessionless chat is ready for its first message — sending mints it
+        <>
+          <div className="chat-log" aria-live="polite">
+            <p className="muted">No messages yet — your first message starts this chat.</p>
+          </div>
+          <form className="composer" onSubmit={onSubmit}>
+            <textarea
+              aria-label="Message the teacher"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder={lessonId !== undefined ? 'Ask about this lesson…' : 'Ask the teacher…'}
+              rows={3}
+            />
+            <div className="composer-side">
+              {lessonId === undefined && (
+                <button type="button" className="btn btn-small" onClick={() => void send('Start the course setup interview. Ask me every onboarding question in ONE message as a numbered list — I will answer them all in one batch.')}>
+                  Course setup
+                </button>
+              )}
+              <button type="submit" className="btn-primary" disabled={draft.trim() === ''}>
+                Send
+              </button>
+            </div>
+          </form>
+        </>
       ) : (
         <>
           <div className="chat-log" aria-live="polite">

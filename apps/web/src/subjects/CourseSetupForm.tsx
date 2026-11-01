@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { CourseSetupBody } from '@studi0/shared';
-import { displayError, setupCourse } from '../api/client';
+import { displayError, getSetupStatus, setupCourse } from '../api/client';
 import { ErrorBanner } from '../components/ErrorBanner';
 
 const EMPTY: CourseSetupBody = {
@@ -20,6 +20,21 @@ export function CourseSetupForm({ subjectId }: { subjectId: string }) {
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<boolean | null>(null); // null = unknown yet
+
+  useEffect(() => {
+    let stopped = false;
+    void getSetupStatus(subjectId)
+      .then((r) => {
+        if (!stopped) setDone(r.done);
+      })
+      .catch(() => {
+        /* banner is informational — a failed probe just leaves it out */
+      });
+    return () => {
+      stopped = true;
+    };
+  }, [subjectId]);
 
   const set = (k: keyof CourseSetupBody) => (v: string) => {
     setSaved(false);
@@ -33,6 +48,7 @@ export function CourseSetupForm({ subjectId }: { subjectId: string }) {
     try {
       await setupCourse(subjectId, body);
       setSaved(true);
+      setDone(true);
     } catch (err) {
       setError(displayError(err));
     } finally {
@@ -48,6 +64,12 @@ export function CourseSetupForm({ subjectId }: { subjectId: string }) {
         every session. Every field is optional; blanks are simply omitted.
       </p>
       {error !== null && <ErrorBanner message={error} />}
+      {done === true && !saved && (
+        <p className="banner banner-ok" role="status">
+          Course setup already completed — your answers are in <code>MISSION.md</code>. Submitting
+          again updates the same section.
+        </p>
+      )}
       {saved && (
         <p className="banner banner-ok" role="status">
           Mission written. Open <strong>Chat</strong> and ask the teacher to propose your first lesson

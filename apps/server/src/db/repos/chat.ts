@@ -62,6 +62,10 @@ export function renameSession(db: Db, id: string, title: string): void {
   db.prepare('UPDATE chat_sessions SET title = ? WHERE id = ?').run(title, id);
 }
 
+export function deleteSession(db: Db, id: string): void {
+  db.prepare('DELETE FROM chat_sessions WHERE id = ?').run(id);
+}
+
 export function rotateSession(db: Db, id: string, summaryPath: string): void {
   db.prepare(
     'UPDATE chat_sessions SET active = 0, summary_path = ?, rotated_at = ? WHERE id = ?',

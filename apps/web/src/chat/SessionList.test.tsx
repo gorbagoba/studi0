@@ -34,6 +34,8 @@ describe('SessionList (vertical list)', () => {
         onSelect={onSelect}
         onNew={vi.fn()}
         onRename={vi.fn()}
+        onDelete={vi.fn()}
+        onClean={vi.fn()}
       />,
     );
     const heaps = screen.getByText('Heaps deep-dive').closest('button') as HTMLButtonElement;
@@ -57,6 +59,8 @@ describe('SessionList (vertical list)', () => {
         onSelect={vi.fn()}
         onNew={vi.fn()}
         onRename={onRename}
+        onDelete={vi.fn()}
+        onClean={vi.fn()}
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Heaps deep-dive options' }));
@@ -77,6 +81,8 @@ describe('SessionList (vertical list)', () => {
         onSelect={vi.fn()}
         onNew={vi.fn()}
         onRename={onRename}
+        onDelete={vi.fn()}
+        onClean={vi.fn()}
       />,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Heaps deep-dive options' }));

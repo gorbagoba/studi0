@@ -208,6 +208,15 @@ export const createSession = (id: ID, body: CreateSessionRequest): Promise<ChatS
 export const renameChatSession = (sessionId: ID, title: string): Promise<ChatSession> =>
   send<ChatSession>('PATCH', `/api/chat/sessions/${sessionId}`, { title });
 
+export const deleteChatSession = (sessionId: ID): Promise<{ ok: boolean }> =>
+  send('DELETE', `/api/chat/sessions/${sessionId}`);
+
+export const cleanChatSessions = (id: ID): Promise<{ removed: number }> =>
+  send('POST', `/api/subjects/${id}/chat/sessions/clean`, {});
+
+export const getSetupStatus = (id: ID): Promise<{ done: boolean }> =>
+  api<{ done: boolean }>(`/api/subjects/${id}/setup-status`);
+
 export const getMessages = (sessionId: ID): Promise<ChatMessage[]> =>
   api<ChatMessage[]>(`/api/chat/sessions/${sessionId}/messages`);
 

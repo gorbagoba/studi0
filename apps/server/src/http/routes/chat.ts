@@ -59,6 +59,26 @@ export async function registerChatRoutes(app: FastifyInstance, ctx: Ctx): Promis
     return sessionToDto(fresh);
   });
 
+  app.delete('/api/chat/sessions/:id', async (req) => {
+    const session = chatRepo.getSession(db, (req.params as { id: string }).id);
+    if (!session) throw new HttpError('SESSION_NOT_FOUND', 'session not found');
+    if (inFlight.has(session.id)) {
+      throw new HttpError('TURN_IN_PROGRESS', 'a turn is running for this session — wait for it or cancel');
+    }
+    chatRepo.deleteSession(db, session.id);
+    return { ok: true };
+  });
+
+  // remove the zero-message shells (eager creations that never got a turn)
+  app.post('/api/subjects/:id/chat/sessions/clean', async (req) => {
+    const subject = requireSubject(db, (req.params as { id: string }).id);
+    const removable = chatRepo.listSessions(db, subject.id).filter((s) => s.msg_count === 0);
+    for (const s of removable) {
+      if (!inFlight.has(s.id)) chatRepo.deleteSession(db, s.id);
+    }
+    return { removed: removable.length };
+  });
+
   app.post('/api/chat/sessions/:id/messages', async (req, reply) => {
     const session = chatRepo.getSession(db, (req.params as { id: string }).id);
     if (!session) throw new HttpError('SESSION_NOT_FOUND', 'session not found');

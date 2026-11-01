@@ -76,3 +76,16 @@ export async function applySetupToMission(subjectRoot: string, body: CourseSetup
   await safeWriteFile(abs, next);
   return next;
 }
+
+/** True when MISSION.md carries a completed form-setup block (any answers submitted). */
+export async function setupCompleted(subjectRoot: string): Promise<boolean> {
+  const abs = path.join(subjectRoot, 'MISSION.md');
+  if (!existsSync(abs)) return false;
+  const mission = await readFile(abs, 'utf8');
+  const begin = mission.indexOf(SETUP_BEGIN);
+  if (begin < 0) return false;
+  const end = mission.indexOf(SETUP_END, begin);
+  if (end < 0) return false;
+  // content between the markers = at least one answered field (renderSetupSection omits blanks)
+  return mission.slice(begin + SETUP_BEGIN.length, end).trim().length > 0;
+}

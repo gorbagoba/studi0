@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- studi0: theta on the board -->
+  <rect width="32" height="32" rx="7" fill="#1f2023"/>
+  <ellipse cx="16" cy="16" rx="8.5" ry="11" fill="none" stroke="#e7e7e4" stroke-width="2.6"/>
+  <line x1="7.5" y1="16" x2="24.5" y2="16" stroke="#e7e7e4" stroke-width="2.6"/>
+</svg>

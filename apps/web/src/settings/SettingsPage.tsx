@@ -62,15 +62,13 @@ export function SettingsPage() {
 
   return (
     <section aria-labelledby="settings-title" className="panel settings-page">
+      <button type="button" className="btn back-btn" onClick={() => setSettingsOpen(false)}>
+        ← Back
+      </button>
       <h3 id="settings-title">Settings &amp; diagnostics</h3>
       <p className="muted">
         Probe every part of the stack, restart the teacher if it is wedged, and cancel stuck builds.
       </p>
-      <div className="btn-row" style={{ marginBottom: '0.5rem' }}>
-        <button type="button" className="btn btn-small" onClick={() => setSettingsOpen(false)}>
-          ← Back
-        </button>
-      </div>
       {error !== null && <ErrorBanner message={error} />}
       {note !== null && (
         <p className="banner banner-ok" role="status">
@@ -170,8 +168,9 @@ export function SettingsPage() {
 
       <h4>API server</h4>
       <p className="muted">
-        Shut down lives in the sidebar — a restart from here is impossible: the process you would
-        need to start it is the one being stopped. Run <code>pnpm dev</code> to bring the stack back.
+        Shut down studi0 from the <strong>⏻ button beside the studi0 logo</strong> (top of the
+        sidebar). A restart from this page is impossible: the process you would need to start it is
+        the one being stopped. Run <code>pnpm dev</code> to bring the stack back.
       </p>
     </section>
   );
