@@ -676,6 +676,7 @@ fieldset legend {
   align-items: center;
   gap: 2px;
   border-radius: 6px;
+  cursor: pointer;
 }
 
 .group-header.drag-over {

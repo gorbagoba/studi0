@@ -387,6 +387,7 @@ export function Sidebar() {
                 <section key={g.id} className="group-section">
                   <div
                     className={`group-header${dragOverGroup === g.id ? ' drag-over' : ''}`}
+                    onClick={() => toggleGroup(g.id)}
                     onContextMenu={(e) => {
                       e.preventDefault();
                       openAt(e.clientX, e.clientY, groupMenuItems(g));
@@ -413,7 +414,10 @@ export function Sidebar() {
                       className="group-toggle"
                       aria-expanded={!isCollapsed}
                       aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} group ${g.name}`}
-                      onClick={() => toggleGroup(g.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleGroup(g.id);
+                      }}
                     >
                       {isCollapsed ? '▸' : '▾'}
                     </button>
@@ -425,7 +429,10 @@ export function Sidebar() {
                       className="kebab"
                       aria-label={`${g.name} options`}
                       aria-haspopup="menu"
-                      onClick={(e) => anchor(e, groupMenuItems(g))}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        anchor(e, groupMenuItems(g));
+                      }}
                     >
                       ⋯
                     </button>
