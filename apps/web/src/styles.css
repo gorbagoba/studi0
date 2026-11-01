@@ -647,6 +647,12 @@ dl.diag-list dd {
   margin: 0;
 }
 
+dl.diag-list dd.diag-status {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
 .job-row button {
   white-space: nowrap;
 }

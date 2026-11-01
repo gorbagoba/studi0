@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { Health } from '@studi0/shared';
 import { cancelJob, displayError, getHealth, restartTeacher } from '../api/client';
 import { useApp } from '../state/app';
+import { Badge } from '../components/Badge';
 import { ErrorBanner } from '../components/ErrorBanner';
 
 /** App-level diagnostics: probe every service, restart the teacher, cancel stuck jobs. */
@@ -84,40 +85,57 @@ export function SettingsPage() {
       {health === null ? (
         <p className="muted">No probe yet — the API server is not answering.</p>
       ) : (
-        <dl className="diag-list">
-          <div className="diag-row">
-            <dt>API server</dt>
-            <dd>
-              up · uptime {Math.floor(health.uptime_s / 60)}m {health.uptime_s % 60}s
-            </dd>
-          </div>
-          <div className="diag-row">
-            <dt>Teacher (opencode)</dt>
-            <dd>
-              {oc?.running ? (
-                <>
-                  {oc.healthy ? 'healthy' : <strong>unhealthy</strong>} · pid {oc.pid ?? '—'} · port{' '}
-                  {oc.port}
-                </>
-              ) : (
-                <strong>not running</strong>
-              )}
-            </dd>
-          </div>
-          <div className="diag-row">
-            <dt>Frontend (vite)</dt>
-            <dd>this page loading proves it is up</dd>
-          </div>
-        </dl>
+        <>
+          <p className="muted">
+            Probed {new Date(health.probed_at).toLocaleTimeString()} · teacher pid {oc?.pid ?? '—'}
+          </p>
+          <dl className="diag-list">
+            <div className="diag-row">
+              <dt>API server</dt>
+              <dd className="diag-status">
+                <Badge tone="ok">up</Badge> uptime {Math.floor(health.uptime_s / 60)}m{' '}
+                {health.uptime_s % 60}s
+              </dd>
+            </div>
+            <div className="diag-row">
+              <dt>Teacher (opencode)</dt>
+              <dd className="diag-status">
+                {oc?.running ? (
+                  <>
+                    <Badge tone={oc.healthy ? 'ok' : 'err'}>
+                      {oc.healthy ? 'healthy' : 'unhealthy'}
+                    </Badge>{' '}
+                    pid {oc.pid ?? '—'} · port {oc.port}
+                  </>
+                ) : (
+                  <Badge tone="err">not running</Badge>
+                )}
+              </dd>
+            </div>
+            <div className="diag-row">
+              <dt>Database</dt>
+              <dd className="diag-status">
+                <Badge tone={health.db === 'ok' ? 'ok' : 'err'}>{health.db}</Badge>
+              </dd>
+            </div>
+            <div className="diag-row">
+              <dt>Frontend (vite)</dt>
+              <dd className="diag-status">
+                <Badge tone="ok">up</Badge> this page loading proves it
+              </dd>
+            </div>
+          </dl>
+        </>
       )}
 
-      {oc !== undefined && !oc.healthy && (
+      {oc !== undefined && (
         <div className="btn-row">
           <button
             type="button"
-            className="btn-danger"
+            className={oc.healthy ? 'btn' : 'btn-danger'}
             onClick={() => void onRestartTeacher()}
             disabled={restarting}
+            title="Stop and reboot the managed opencode serve; the API stays up"
           >
             {restarting ? 'Restarting…' : 'Restart teacher'}
           </button>

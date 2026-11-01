@@ -23,6 +23,8 @@ export async function registerHealthRoutes(app: FastifyInstance, ctx: Ctx): Prom
       ok: true,
       opencode: ctx.oc.status(),
       uptime_s: Math.round(process.uptime()),
+      db: typeof ctx.db.prepare('SELECT 1').get() === 'object' ? 'ok' : 'error',
+      probed_at: new Date().toISOString(),
       jobs: jobs.map((j) => ({
         id: j.id,
         subject: j.subject,
