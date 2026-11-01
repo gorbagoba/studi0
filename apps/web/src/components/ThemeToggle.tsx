@@ -5,10 +5,7 @@ type Theme = 'light' | 'dark';
 function initial(): Theme {
   const stored = localStorage.getItem('studi0-theme');
   if (stored === 'dark' || stored === 'light') return stored;
-  // jsdom (and older browsers) lack matchMedia — fall back to light
-  return typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches
-    ? 'dark'
-    : 'light';
+  return 'dark'; // Blackboard identity: the board is the default until toggled
 }
 
 export function ThemeToggle() {
