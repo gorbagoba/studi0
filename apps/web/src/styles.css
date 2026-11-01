@@ -609,6 +609,48 @@ fieldset legend {
   line-height: 1.5;
 }
 
+/* ---- settings / diagnostics ---- */
+
+.settings-page {
+  max-width: 760px;
+}
+
+.settings-page h4 {
+  margin-top: 1.2rem;
+}
+
+.diag-list {
+  margin: 0.5rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.diag-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+dl.diag-list .diag-row {
+  display: flex;
+}
+
+dl.diag-list dt {
+  font-weight: 500;
+  color: var(--muted);
+}
+
+dl.diag-list dd {
+  margin: 0;
+}
+
+.job-row button {
+  white-space: nowrap;
+}
+
 .theme-toggle {
   position: fixed;
   top: 0.7rem;

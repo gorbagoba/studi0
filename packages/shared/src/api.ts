@@ -196,6 +196,16 @@ export const opencodeHealthSchema = z.object({
 });
 export type OpencodeHealth = z.infer<typeof opencodeHealthSchema>;
 
+export const activeJobSchema = z.object({
+  id: z.string(),
+  subject: z.string(),
+  kind: jobKindSchema,
+  status: z.enum(['queued', 'running', 'cancelling']),
+  done: z.number().int(),
+  total: z.number().int(),
+});
+export type ActiveJob = z.infer<typeof activeJobSchema>;
+
 // ---- endpoint request bodies ----
 
 /** Course setup form — every field optional; blanks are omitted from MISSION.md. */

@@ -15,6 +15,8 @@ describe('POST /api/shutdown', () => {
     const res = await h.app.inject({ method: 'POST', url: '/api/shutdown' });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ ok: true });
+    // the route defers the signal 50ms so the response can flush first
+    await new Promise((r) => setTimeout(r, 80));
     expect(kill).toHaveBeenCalledWith(process.pid, 'SIGTERM');
   });
 });

@@ -7,7 +7,7 @@ import { Badge } from '../components/Badge';
 import { ErrorBanner } from '../components/ErrorBanner';
 
 export function Sidebar() {
-  const { subjectId, selectSubject } = useApp();
+  const { subjectId, selectSubject, setSettingsOpen } = useApp();
   const subjects = useSubjects();
   const [addOpen, setAddOpen] = useState(false);
   const [shuttingDown, setShuttingDown] = useState(false);
@@ -70,6 +70,14 @@ export function Sidebar() {
         )}
       </nav>
       {subjects.error !== null && <ErrorBanner message={subjects.error} />}
+      <button
+        type="button"
+        className="btn btn-small"
+        onClick={() => setSettingsOpen(true)}
+        title="Probe servers, restart the teacher, cancel stuck jobs"
+      >
+        Settings &amp; diagnostics
+      </button>
       {shuttingDown ? (
         <p className="muted shutdown-note" role="status">
           Server shut down. Close this tab — restart with <code>pnpm dev</code>.

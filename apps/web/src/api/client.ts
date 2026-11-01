@@ -5,6 +5,8 @@ import type {
   ChatSession,
   CourseSetupBody,
   CreateSessionRequest,
+  Health,
+  OpencodeHealth,
   DueResponse,
   ErrorCode,
   GenerateQuestionsRequest,
@@ -98,6 +100,11 @@ export const setupCourse = (id: ID, body: CourseSetupBody): Promise<{ ok: boolea
 
 export const shutdownServer = (): Promise<{ ok: boolean }> =>
   send<{ ok: boolean }>('POST', '/api/shutdown');
+
+export const getHealth = (): Promise<Health> => api<Health>('/api/health');
+
+export const restartTeacher = (): Promise<{ ok: boolean; opencode: OpencodeHealth }> =>
+  send<{ ok: boolean; opencode: OpencodeHealth }>('POST', '/api/teacher/restart');
 
 export const getSubject = (id: ID): Promise<SubjectDetail> =>
   api<SubjectDetail>(`/api/subjects/${id}`);
