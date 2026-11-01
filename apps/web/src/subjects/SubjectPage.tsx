@@ -80,7 +80,10 @@ export function SubjectPage({ subjectId }: { subjectId: ID }) {
       ) : (
         <>
           <header className="page-header">
-            <h2>{s.name}</h2>
+            <h2>
+              {s.icon !== null && <span className="subject-icon page-icon">{s.icon}</span>}
+              {s.name}
+            </h2>
             {s.stale && <Badge tone="warn">stale</Badge>}
             <Badge tone={s.graphStatus === 'ready' ? 'ok' : 'neutral'}>graph: {s.graphStatus}</Badge>
             <span className="muted">
