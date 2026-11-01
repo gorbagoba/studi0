@@ -254,6 +254,12 @@ export const answerBodySchema = z.object({ answer: z.string().min(1) });
 
 export const markdownBodySchema = z.object({ markdown: z.string() });
 
+export const splitPdfBodySchema = z.object({ file: z.string().min(1) });
+export type SplitPdfRequest = z.infer<typeof splitPdfBodySchema>;
+
+export const splitPdfResponseSchema = z.object({ parts: z.array(z.string()) });
+export type SplitPdfResponse = z.infer<typeof splitPdfResponseSchema>;
+
 // ---- endpoint responses (composed) ----
 
 export const graphInfoSchema = z.object({

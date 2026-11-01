@@ -16,6 +16,7 @@ export interface Config {
   ocHost: string;
   oneshotTimeoutMs: number;
   sseHeartbeatMs: number;
+  splitTargetBytes: number; // pdf-split target size per part (test/tuning seam)
 }
 
 // repo root = apps/server/src -> up 3
@@ -39,5 +40,6 @@ export function makeConfig(dataDir?: string): Config {
     ocHost: '127.0.0.1',
     oneshotTimeoutMs: 300_000,
     sseHeartbeatMs: 15_000,
+    splitTargetBytes: Number(process.env.STUDI0_SPLIT_TARGET_BYTES ?? 15 * 1024 * 1024),
   };
 }

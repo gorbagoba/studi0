@@ -1,0 +1,244 @@
+import { describe, expect, it, afterEach } from 'vitest';
+import { writeFile, readFile, rm } from 'node:fs/promises';
+import path from 'node:path';
+import { makeHarness } from './helpers';
+import { isAlive } from '../src/util/proc.js';
+import type { TestHarness } from './helpers';
+
+// route every spawnArgs call at node itself: a real child without needing opencode
+process.env.OPENCODE_BIN = process.execPath;
+
+let h: TestHarness | undefined;
+
+afterEach(async () => {
+  if (h) await h.close();
+  h = undefined;
+});
+
+async function createSubject(name: string): Promise<{ id: string; root: string }> {
+  const res = await h!.app.inject({ method: 'POST', url: '/api/subjects', payload: { name } });
+  const body = res.json() as { id: string; path: string };
+  return { id: body.id, root: body.path };
+}
+
+function stageScript(): string {
+  // The fake `opencode` (executed as `node run ...`): stages are told apart by
+  // stable phrases from the real prompts (PLANNER / Execute this graphify chunk /
+  // per-chunk extraction outputs / graph verification agent); anything else is
+  // the fallback single-run pipeline.
+  return `const fs = require('node:fs');
+const prompt = process.argv[process.argv.length - 1];
+if (prompt.includes('graph verification agent')) {
+  console.log('## Confirmed edges\\n\\n- a --uses--> b — supported by material');
+  process.exit(0);
+}
+if (prompt.includes('per-chunk extraction outputs')) { // merge + export
+  fs.mkdirSync('graphify-out', { recursive: true });
+  fs.writeFileSync('graphify-out/graph.json', '{"nodes":[]}');
+  console.log('DONE 0 files ok, 0 failed.');
+  process.exit(0);
+}
+if (prompt.includes('PLANNER')) { // plan one-shot: write chunk files + JSON plan
+  if (process.env.STUDI0_TEST_PLAN_GARBAGE === '1') {
+    console.log('sorry, I cannot produce a plan today');
+    process.exit(0);
+  }
+  const n = Number(process.env.STUDI0_TEST_CHUNKS || '2');
+  fs.mkdirSync('graphify-out/chunks', { recursive: true });
+  const chunks = [];
+  for (let i = 1; i <= n; i++) {
+    const p = 'graphify-out/chunks/chunk-' + String(i).padStart(2, '0') + '.md';
+    fs.writeFileSync(p, 'extract chunk ' + i);
+    chunks.push(p);
+  }
+  console.log('thinking about the split...');
+  console.log(JSON.stringify({ chunks, total: n }));
+  process.exit(0);
+}
+if (prompt.includes('Execute this graphify chunk')) { // one wave child per chunk
+  const full = (prompt.match(/graphify-out\\/chunks\\/chunk-\\d+\\.md/) || ['chunks/chunk-x.md'])[0];
+  const short = full.split('/').pop().replace(/\\.md$/, '');
+  fs.appendFileSync(process.env.STUDI0_TEST_WAVELOG, 'start:' + short + '\\n');
+  if (process.env.STUDI0_TEST_CHUNK_FAILS === short) {
+    console.log('studi0-failed {"file":"' + full + '","reason":"boom"}');
+    fs.appendFileSync(process.env.STUDI0_TEST_WAVELOG, 'end:' + short + '\\n');
+    process.exit(0);
+  }
+  if (process.env.STUDI0_TEST_CHUNK_CRASH === short) process.exit(3);
+  if (process.env.STUDI0_TEST_CHUNK_SLOW === '1') {
+    fs.mkdirSync(process.env.STUDI0_TEST_PID_DIR, { recursive: true });
+    fs.writeFileSync(process.env.STUDI0_TEST_PID_DIR + '/' + short + '.pid', String(process.pid));
+    setTimeout(() => process.exit(0), 60000);
+  }
+  const t = Date.now();
+  while (Date.now() - t < 150) {} // busy-wait so wave overlap is observable in the log
+  fs.appendFileSync(process.env.STUDI0_TEST_WAVELOG, 'end:' + short + '\\n');
+  console.log('DONE 1 files ok, 0 failed.');
+  process.exit(0);
+}
+// fallback single-run pipeline (extractionPrompt)
+console.log('studi0-progress {"done":0,"total":1,"file":null}');
+console.log('studi0-progress {"done":1,"total":1,"file":"material/a.md"}');
+console.log('DONE 1 files ok, 0 failed.');
+fs.mkdirSync('graphify-out', { recursive: true });
+fs.writeFileSync('graphify-out/graph.json', '{"nodes":[]}');
+process.exit(0);
+`;
+}
+
+async function waitForTerminal(jobId: string, timeoutMs = 30_000): Promise<Record<string, unknown>> {
+  const t0 = Date.now();
+  for (;;) {
+    const job = (await h!.app.inject({ method: 'GET', url: `/api/jobs/${jobId}` })).json() as Record<
+      string,
+      unknown
+    >;
+    if (['complete', 'partial', 'failed', 'cancelled'].includes(job.status as string)) return job;
+    if (Date.now() - t0 > timeoutMs) return job;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+
+describe('wave pipeline runner (T-P1/T-P2)', () => {
+  it('plans, runs chunks in waves of ≤4, merges, verifies; progress + log SSE events flow', async () => {
+    h = await makeHarness();
+    const { id, root } = await createSubject('Waves');
+    await writeFile(path.join(root, 'run'), stageScript());
+    const wavelog = path.join(root, 'wave.log');
+    process.env.STUDI0_TEST_CHUNKS = '9';
+    process.env.STUDI0_TEST_WAVELOG = wavelog;
+    const logEvents: { line: string; at: string }[] = [];
+    h.ctx.events.subscribe(id, (event, data) => {
+      if (event === 'log') logEvents.push(data as { line: string; at: string });
+    });
+    try {
+      const jobId = (
+        await h.app.inject({ method: 'POST', url: `/api/subjects/${id}/jobs`, payload: { kind: 'build' } })
+      ).json().id;
+      const job = await waitForTerminal(jobId, 60_000);
+      expect(job.status).toBe('complete');
+      expect(job.progress).toEqual({ done: 9, total: 9, currentFile: null });
+      // artifacts: merge wrote the graph, verification one-shot wrote the report
+      await expect(readFile(path.join(root, 'graphify-out', 'graph.json'), 'utf8')).resolves.toBeTruthy();
+      await expect(readFile(path.join(root, 'graphify-out', 'VERIFY_REPORT.md'), 'utf8')).resolves.toContain('Confirmed edges');
+      // every chunk ran exactly once, and never more than 4 in flight
+      const lines = (await readFile(wavelog, 'utf8')).trim().split('\n');
+      const started = lines.filter((l) => l.startsWith('start:'));
+      expect(started).toHaveLength(9);
+      let inFlight = 0;
+      let maxInFlight = 0;
+      for (const l of lines) {
+        if (l.startsWith('start:')) inFlight++;
+        else inFlight--;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+      }
+      expect(maxInFlight).toBeLessThanOrEqual(4);
+      // build.log passthrough + SSE log events share the same lines
+      const tail = (await h.app.inject({ method: 'GET', url: `/api/subjects/${id}/graph/log` })).json() as {
+        log: string;
+      };
+      expect(tail.log).toContain('chunk plan: 9 chunks');
+      expect(logEvents.length).toBeGreaterThan(0);
+      for (const e of logEvents) {
+        expect(e.line).toMatch(/^\[T\+\d+s\] /);
+        expect(Number.isNaN(Date.parse(e.at))).toBe(false);
+      }
+      expect(logEvents.some((e) => e.line.includes('started (job'))).toBe(true);
+      expect(tail.log).toContain(logEvents[0].line);
+    } finally {
+      delete process.env.STUDI0_TEST_CHUNKS;
+      delete process.env.STUDI0_TEST_WAVELOG;
+    }
+  }, 90_000);
+
+  it('reports chunk failures honestly (partial) without stopping the remaining waves', async () => {
+    h = await makeHarness();
+    const { id, root } = await createSubject('WavePartial');
+    await writeFile(path.join(root, 'run'), stageScript());
+    process.env.STUDI0_TEST_CHUNKS = '3';
+    process.env.STUDI0_TEST_WAVELOG = path.join(root, 'wave.log');
+    process.env.STUDI0_TEST_CHUNK_FAILS = 'chunk-01';
+    process.env.STUDI0_TEST_CHUNK_CRASH = 'chunk-02';
+    try {
+      const jobId = (
+        await h.app.inject({ method: 'POST', url: `/api/subjects/${id}/jobs`, payload: { kind: 'build' } })
+      ).json().id;
+      const job = await waitForTerminal(jobId, 60_000);
+      expect(job.status).toBe('partial');
+      expect(job.progress).toEqual({ done: 3, total: 3, currentFile: null });
+      expect(job.partial).toEqual([
+        { file: 'graphify-out/chunks/chunk-01.md', reason: 'boom' },
+        { file: 'graphify-out/chunks/chunk-02.md', reason: 'chunk run exited with code 3' },
+      ]);
+    } finally {
+      delete process.env.STUDI0_TEST_CHUNKS;
+      delete process.env.STUDI0_TEST_WAVELOG;
+      delete process.env.STUDI0_TEST_CHUNK_FAILS;
+      delete process.env.STUDI0_TEST_CHUNK_CRASH;
+    }
+  }, 90_000);
+
+  it('cancel aborts every in-flight wave child within the deadline (AC4)', async () => {
+    h = await makeHarness();
+    const { id, root } = await createSubject('WaveCancel');
+    await writeFile(path.join(root, 'run'), stageScript());
+    process.env.STUDI0_TEST_CHUNKS = '6';
+    process.env.STUDI0_TEST_CHUNK_SLOW = '1';
+    process.env.STUDI0_TEST_WAVELOG = path.join(root, 'wave.log');
+    const pidDir = path.join(root, 'pids');
+    process.env.STUDI0_TEST_PID_DIR = pidDir;
+    const fsp = await import('node:fs/promises');
+    await rm(pidDir, { recursive: true, force: true });
+    await fsp.mkdir(pidDir, { recursive: true });
+    try {
+      const jobId = (
+        await h.app.inject({ method: 'POST', url: `/api/subjects/${id}/jobs`, payload: { kind: 'build' } })
+      ).json().id;
+      // wait until wave 1 (4 children) is in flight
+      const t0 = Date.now();
+      while (Date.now() - t0 < 20_000) {
+        const files = await fsp.readdir(pidDir).catch(() => [] as string[]);
+        if (files.length >= 4) break;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      const cancel = await h.app.inject({ method: 'POST', url: `/api/jobs/${jobId}/cancel` });
+      expect(cancel.statusCode).toBe(200);
+      const job = await waitForTerminal(jobId, 20_000);
+      expect(job.status).toBe('cancelled');
+      // only wave 1 spawned (4 children); all of them were killed
+      const files = await fsp.readdir(pidDir);
+      expect(files).toHaveLength(4);
+      for (const f of files) {
+        const pid = (await readFile(path.join(pidDir, f), 'utf8')).trim();
+        expect(isAlive(pid)).toBe(false);
+      }
+    } finally {
+      delete process.env.STUDI0_TEST_CHUNKS;
+      delete process.env.STUDI0_TEST_CHUNK_SLOW;
+      delete process.env.STUDI0_TEST_WAVELOG;
+      delete process.env.STUDI0_TEST_PID_DIR;
+    }
+  }, 60_000);
+
+  it('falls back to the single-run pipeline when the planner produces no usable plan', async () => {
+    h = await makeHarness();
+    const { id, root } = await createSubject('WaveFallback');
+    await writeFile(path.join(root, 'run'), stageScript());
+    process.env.STUDI0_TEST_PLAN_GARBAGE = '1';
+    try {
+      const jobId = (
+        await h.app.inject({ method: 'POST', url: `/api/subjects/${id}/jobs`, payload: { kind: 'build' } })
+      ).json().id;
+      const job = await waitForTerminal(jobId, 60_000);
+      expect(job.status).toBe('complete');
+      expect(job.progress).toEqual({ done: 1, total: 1, currentFile: 'material/a.md' });
+      const tail = (await h.app.inject({ method: 'GET', url: `/api/subjects/${id}/graph/log` })).json() as {
+        log: string;
+      };
+      expect(tail.log).toContain('falling back to single-run pipeline');
+      await expect(readFile(path.join(root, 'graphify-out', 'VERIFY_REPORT.md'), 'utf8')).resolves.toBeTruthy();
+    } finally {
+      delete process.env.STUDI0_TEST_PLAN_GARBAGE;
+    }
+  }, 60_000);
+});

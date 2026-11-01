@@ -1,10 +1,12 @@
 import path from 'node:path';
 import { createWriteStream } from 'node:fs';
 import { existsSync, statSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import { pipeline } from 'node:stream/promises';
 import { readdir, stat, rm } from 'node:fs/promises';
 import type { Readable } from 'node:stream';
 import * as filesRepo from '../db/repos/files.js';
+import { killTreeWithDeadline } from '../util/proc.js';
 import { safeResolve, sanitizeName, isInside } from '../fs/paths.js';
 import type { Db } from '../db/index.js';
 import { HttpError } from '../util/errors.js';
@@ -123,4 +125,99 @@ export async function saveUpload(
     origin: 'upload',
   });
   return { ok: true, entry };
+}
+
+export interface SplitPdfResult {
+  parts: string[];
+}
+
+function runPython(
+  args: string[],
+  timeoutMs: number,
+): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  const run = (bin: string, a: string[]) =>
+    new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+      const child = spawn(bin, a, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+      const stdout: Buffer[] = [];
+      const stderr: Buffer[] = [];
+      child.stdout?.on('data', (d: Buffer) => stdout.push(d));
+      child.stderr?.on('data', (d: Buffer) => stderr.push(d));
+      const timer = setTimeout(() => {
+        if (child.pid !== undefined) killTreeWithDeadline(child.pid);
+        else child.kill();
+      }, timeoutMs);
+      timer.unref();
+      child.on('error', reject);
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        resolve({
+          code,
+          stdout: Buffer.concat(stdout).toString('utf8'),
+          stderr: Buffer.concat(stderr).toString('utf8'),
+        });
+      });
+    });
+  try {
+    return run('python', args);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return run('py', ['-3', ...args]);
+    throw e;
+  }
+}
+
+/**
+ * Split material/<relFile> into ~targetBytes parts next to the original
+ * (apps/server/scripts/split_pdf.py, pypdf). Original untouched; file rows
+ * synced like uploads. Files already at or below the target are returned
+ * unsplit (parts = [original]).
+ */
+export async function splitPdf(
+  db: Db,
+  subject: SubjectRow,
+  targetBytes: number,
+  relFile: string,
+): Promise<SplitPdfResult> {
+  if (path.extname(relFile).toLowerCase() !== '.pdf') {
+    throw new HttpError('UNSUPPORTED_FILE_TYPE', `pdf split needs a .pdf file: ${relFile}`);
+  }
+  const materialDir = safeResolve(subject.path, 'material');
+  const abs = safeResolve(subject.path, relFile); // traversal hard gate
+  if (!isInside(materialDir, abs)) {
+    throw new HttpError('PATH_TRAVERSAL', `file must live under material/: ${relFile}`);
+  }
+  if (!existsSync(abs) || !statSync(abs).isFile()) {
+    throw new HttpError('FILE_NOT_FOUND', `file not found: ${relFile}`);
+  }
+  const toRel = (p: string) => path.relative(subject.path, p).replaceAll('\\', '/');
+  if (statSync(abs).size <= targetBytes) {
+    return { parts: [toRel(abs)] };
+  }
+  const script = path.resolve(import.meta.dirname, '..', '..', 'scripts', 'split_pdf.py');
+  const res = await runPython([script, abs, path.dirname(abs), String(targetBytes)], 120_000);
+  if (res.code !== 0) {
+    const tail = res.stderr.split(/\r?\n/).filter(Boolean).slice(-3).join(' | ');
+    console.error(`[split-pdf ${relFile}] exited ${res.code}: ${tail || 'no stderr'}`);
+    throw new HttpError('INTERNAL', `pdf split failed: ${tail || `python exited with code ${res.code}`}`);
+  }
+  const parsed = JSON.parse(res.stdout) as { parts?: unknown };
+  if (!Array.isArray(parsed.parts) || parsed.parts.length === 0) {
+    throw new HttpError('INTERNAL', 'pdf split produced no parts');
+  }
+  const parts: string[] = [];
+  for (const p of parsed.parts) {
+    if (typeof p !== 'string' || !isInside(materialDir, path.resolve(p))) {
+      throw new HttpError('INTERNAL', 'pdf split reported a part outside material/');
+    }
+    const s = await stat(p);
+    const rel = toRel(p);
+    filesRepo.upsertFile(db, {
+      subject_id: subject.id,
+      rel_path: rel,
+      bytes: s.size,
+      mtime: s.mtime.toISOString(),
+      origin: 'upload',
+    });
+    parts.push(rel);
+  }
+  return { parts };
 }

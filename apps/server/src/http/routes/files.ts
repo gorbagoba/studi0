@@ -1,7 +1,9 @@
 ﻿import type { FastifyInstance } from 'fastify';
 import type { Ctx } from '../../context.js';
 import { requireSubject } from '../../subjects/service.js';
-import { listTree, saveUpload } from '../../subjects/files.js';
+import { listTree, saveUpload, splitPdf } from '../../subjects/files.js';
+import { parseWith } from '../validate.js';
+import { splitPdfBodySchema } from '@studi0/shared';
 import { HttpError } from '../../util/errors.js';
 import type { FileEntry } from '@studi0/shared';
 
@@ -45,5 +47,11 @@ export async function registerFileRoutes(app: FastifyInstance, ctx: Ctx): Promis
       );
     }
     return { accepted, rejected };
+  });
+
+  app.post('/api/subjects/:id/split-pdf', async (req) => {
+    const subject = requireSubject(db, (req.params as { id: string }).id);
+    const { file } = parseWith(splitPdfBodySchema, req.body);
+    return splitPdf(db, subject, cfg.splitTargetBytes, file);
   });
 }

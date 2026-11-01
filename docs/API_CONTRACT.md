@@ -117,6 +117,9 @@ No files are copied or moved (AC1).
 `POST /api/subjects/:id/files` — multipart, field `files` (repeatable), cap 200 MB/file, extensions `.pdf`/`.md` only. Per-file accept/reject; accepted files stream into `material/` (name sanitized, collisions suffixed `-1`, `-2`, …).
 → `200 { accepted: FileEntry[]; rejected: { name: string; reason: string }[] }` · `404 SUBJECT_NOT_FOUND` · `415 UNSUPPORTED_FILE_TYPE` envelope with `details.rejected` (only when nothing at all was acceptable)
 
+`POST /api/subjects/:id/split-pdf` — **PDF-split assistant**: splits a big material PDF into parts next to the original (python + `pypdf`, `apps/server/scripts/split_pdf.py`). `{ file: string }` is a path relative to the subject root and **must resolve inside `material/`** (traversal is a hard gate). Heuristic: parts of ~10–20 MB — `ceil(fileBytes / 15 MB)` parts, pages distributed evenly (target tunable via `STUDI0_SPLIT_TARGET_BYTES`); files at or below the target are returned unsplit as `[file]`. Parts are named `<stem>_pNN.pdf`; the original is never written; new parts are synced into the files table like uploads and are picked up by the next build.
+→ `200 { parts: string[] }` (paths relative to the subject root) · `404 SUBJECT_NOT_FOUND | FILE_NOT_FOUND` · `400 PATH_TRAVERSAL` · `415 UNSUPPORTED_FILE_TYPE` (not a `.pdf`) · `500 INTERNAL` (python/pypdf failure)
+
 ### Jobs (graph pipeline)
 
 `POST /api/subjects/:id/jobs`
@@ -134,6 +137,7 @@ No files are copied or moved (AC1).
 
 `GET /api/subjects/:id/events` — **SSE, subject-scoped** (job progress, lesson index changes, question bank changes):
 - `event: job` → `Job` (full snapshot on every transition)
+- `event: log` → `{ line: string; at: ISO }` (one pipeline build-log line, same text as written to `graphify-out/build.log`; `at` is the server timestamp)
 - `event: lesson` → `Lesson` (written during chat / auto-indexed)
 - `event: questions` → `{ subjectId: ID; questions: Question[] }` (auto-deposit / quiz block landed)
 - heartbeat comments only otherwise

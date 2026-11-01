@@ -120,7 +120,8 @@ export function updateJob(db: Db, id: string, patch: JobPatch): JobRow | null {
   return getJob(db, id);
 }
 
-/** Boot cleanup: pids of jobs left running/cancelling by a server restart (kill their trees before closing the rows). */
+/** Boot cleanup: pids of jobs left running/cancelling by a server restart (kill their trees before closing the rows).
+ *  The pid column holds every pid a wave-orchestrated job spawned, comma-joined. */
 export function staleRunningPids(db: Db): string[] {
   return (
     db
@@ -128,7 +129,7 @@ export function staleRunningPids(db: Db): string[] {
         `SELECT pid FROM jobs WHERE status IN ('running','cancelling') AND pid IS NOT NULL`,
       )
       .all() as unknown as { pid: string }[]
-  ).map((r) => r.pid);
+  ).flatMap((r) => r.pid.split(',').filter(Boolean));
 }
 
 /** Boot cleanup: jobs left running/cancelling by a server restart are closed as failed. */

@@ -1,12 +1,20 @@
 import path from 'node:path';
 import { existsSync } from 'node:fs';
-import { parseFailures, parseProgress, stripStepMarkers, type FailureLine } from './parse.js';
-import { appendBuildLog } from './buildLog.js';
-import { killTree, killTreeWithDeadline, spawnArgs } from '../util/proc.js';
-import { extractionPrompt, VERIFICATION_PROMPT } from '../graph/prompts.js';
+import { extractJson, parseFailures, parseProgress, stripStepMarkers, type FailureLine, type ProgressLine } from './parse.js';
+import { appendBuildLog, formatLogLine } from './buildLog.js';
+import { killTree, killTreeWithDeadline, spawnArgs, type ChildRun } from '../util/proc.js';
+import {
+  chunkWavePrompt,
+  extractionPrompt,
+  mergePrompt,
+  planPrompt,
+  VERIFICATION_PROMPT,
+} from '../graph/prompts.js';
+import { safeResolve } from '../fs/paths.js';
 import { safeWriteFile } from '../fs/safeWrite.js';
 import * as jobsRepo from '../db/repos/jobs.js';
 import type { Db } from '../db/index.js';
+import type { EventBus } from '../http/sse.js';
 import type { JobRow } from '../db/repos/jobs.js';
 import type { SubjectRow } from '../db/repos/subjects.js';
 import type { OneshotFn } from '../util/oneshot.js';
@@ -37,69 +45,140 @@ export function killJob(jobId: string): void {
   kills.get(jobId)?.();
 }
 
+/** Concurrent chunk-extraction cap — more in-flight model requests kill the connection (agents/studi0-pipeline.md). */
+const CHUNK_WAVE = 4;
+
 /**
- * The real pipeline job body: headless `opencode run` in the subject dir
- * (graphify build/update/re-cluster), progress protocol parsing, then the
- * verification pass as a second headless run writing VERIFY_REPORT.md.
+ * The pipeline job body. build/update run as waves: a planner one-shot decides
+ * the chunk split (JSON only), the runner itself executes chunk extractions in
+ * waves of ≤4 headless children, then a final run merges + exports (plus the
+ * verification one-shot). recluster — and any wave run whose plan is unusable —
+ * falls back to the original single-run pipeline.
  */
 export const makeRunPipeline =
-  (oneshot: OneshotFn, db: Db): RunPipelineFn =>
+  (oneshot: OneshotFn, db: Db, events?: EventBus): RunPipelineFn =>
   async (job, subject, onUpdate, signal) => {
-    const prompt = extractionPrompt(job.kind, subject.name);
-    // --agent: the global default agent is plan-only and would never execute
-    // graphify; --standalone: a private opencode server inside this tree so
-    // kill-tree can stop (and observe) the actual agent work
-    const { pid, done, child } = spawnArgs(
-      ['run', '--auto', '--agent', 'studi0-pipeline', '--standalone', prompt],
-      subject.path,
-    );
-    // persist the pid: boot cleanup must be able to kill-tree orphans after a restart
-    jobsRepo.updateJob(db, job.id, { pid: pid !== undefined ? String(pid) : null });
-
-    // build log — every protocol line, plus raw agent/graphify output, timestamped relative to start
     const startedAt = Date.now();
-    const log = (message: string) =>
-      void appendBuildLog(subject.path, (Date.now() - startedAt) / 1000, message);
-    log(`${job.kind} started (job ${job.id.slice(0, 8)})`);
+    // every protocol/raw line lands in build.log AND the subject SSE stream (same text)
+    const log = (message: string) => {
+      const rel = (Date.now() - startedAt) / 1000;
+      void appendBuildLog(subject.path, rel, message);
+      events?.emit(subject.id, 'log', {
+        line: formatLogLine(rel, message),
+        at: new Date().toISOString(),
+      });
+    };
 
     let aborted = false;
+    const liveKills = new Set<() => void>();
+    const spawnedPids = new Set<number>();
+
+    const spawnChild = (args: string[]): ChildRun => {
+      // --agent: the global default agent is plan-only and would never execute
+      // graphify; --standalone: a private opencode server inside this tree so
+      // kill-tree can stop (and observe) the actual agent work
+      const { pid, done, child } = spawnArgs(args, subject.path);
+      const kill = () => {
+        if (pid !== undefined) killTreeWithDeadline(pid);
+        else child.kill();
+      };
+      liveKills.add(kill);
+      if (aborted) kill(); // abort raced the spawn — the late child dies immediately
+      if (pid !== undefined) {
+        spawnedPids.add(pid);
+        // persist every spawned pid: boot cleanup kill-trees the whole list after a restart
+        jobsRepo.updateJob(db, job.id, { pid: [...spawnedPids].join(',') });
+      }
+      void done.finally(() => liveKills.delete(kill));
+      return { pid, done, child };
+    };
+
     const abort = () => {
       aborted = true;
-      if (pid !== undefined) killTreeWithDeadline(pid);
-      else child.kill();
+      for (const kill of [...liveKills]) kill();
     };
     kills.set(job.id, abort);
     signal.addEventListener('abort', abort, { once: true });
 
-    let tail = '';
-    const handleLine = (raw: string) => {
+    /** Stream child stdout line-by-line; returns a flush for the trailing line. */
+    const pipeLines = (child: ChildRun, onLine: (line: string) => void): (() => void) => {
+      let tail = '';
+      child.child.stdout?.setEncoding('utf8');
+      child.child.stdout?.on('data', (chunk: string) => {
+        tail += chunk;
+        let idx: number;
+        while ((idx = tail.indexOf('\n')) >= 0) {
+          onLine(tail.slice(0, idx));
+          tail = tail.slice(idx + 1);
+        }
+      });
+      return () => onLine(tail);
+    };
+
+    const handleLine = (onProgress?: (p: ProgressLine) => void) => (raw: string) => {
       const line = stripStepMarkers(raw);
       const p = parseProgress(line);
       if (p) {
-        onUpdate({ done: p.done, total: p.total, currentFile: p.file });
-        log(`progress: ${p.file ?? '…'} (${p.done}/${p.total})`);
+        if (onProgress) onProgress(p);
+        else log(`progress: ${p.file ?? '…'} (${p.done}/${p.total})`);
       } else if (line.trim()) {
         log(`out: ${line.trim().slice(0, 160)}`);
       }
     };
-    child.stdout?.setEncoding('utf8');
-    child.stdout?.on('data', (chunk: string) => {
-      tail += chunk;
-      let idx: number;
-      while ((idx = tail.indexOf('\n')) >= 0) {
-        handleLine(tail.slice(0, idx));
-        tail = tail.slice(idx + 1);
-      }
-    });
 
     const finish = (outcome: PipelineOutcome): PipelineOutcome => {
       log(`${job.kind} finished: ${outcome.status}${outcome.error ? ` — ${outcome.error}` : ''}`);
       return outcome;
     };
 
-    try {
-      const res = await done;
-      handleLine(tail); // flush trailing line
+    const runVerification = async (
+      status: PipelineOutcome['status'],
+      partial: FailureLine[] | null,
+    ): Promise<PipelineOutcome> => {
+      log('verification pass started');
+      try {
+        const report = await oneshot(subject.path, VERIFICATION_PROMPT, signal);
+        await safeWriteFile(
+          path.join(subject.path, 'graphify-out', 'VERIFY_REPORT.md'),
+          report.trim() + '\n',
+        );
+        log('verification report written');
+        return { status, partial, error: null };
+      } catch {
+        if (aborted || signal.aborted) return { status: 'cancelled', partial, error: null };
+        log('verification failed — edges unverified');
+        return {
+          status: status === 'complete' ? 'partial' : status,
+          partial: [
+            ...(partial ?? []),
+            { file: '(verification)', reason: 'verification failed; edges unverified' },
+          ],
+          error: null,
+        };
+      }
+    };
+
+    /** Original pipeline shape: one headless run does chunking + extraction + export itself. */
+    const runSingle = async (): Promise<PipelineOutcome> => {
+      if (aborted || signal.aborted) return finish({ status: 'cancelled', partial: null, error: null });
+      const child = spawnChild([
+        'run',
+        '--auto',
+        '--agent',
+        'studi0-pipeline',
+        '--standalone',
+        extractionPrompt(job.kind, subject.name),
+      ]);
+      log(`${job.kind} started (job ${job.id.slice(0, 8)})`);
+      const flush = pipeLines(
+        child,
+        handleLine((p) => {
+          onUpdate({ done: p.done, total: p.total, currentFile: p.file });
+          log(`progress: ${p.file ?? '…'} (${p.done}/${p.total})`);
+        }),
+      );
+      const res = await child.done;
+      flush(); // trailing line
       if (aborted || signal.aborted) {
         return finish({ status: 'cancelled', partial: parseFailures(res.stdout), error: null });
       }
@@ -124,31 +203,136 @@ export const makeRunPipeline =
       }
       const failures = parseFailures(res.stdout);
       for (const f of failures) log(`failed file: ${f.file} — ${f.reason}`);
-      let status: PipelineOutcome['status'] = failures.length ? 'partial' : 'complete';
-      let partial: FailureLine[] | null = failures.length ? failures : null;
-      // verification pass (second headless run); failure downgrades to partial
-      log('verification pass started');
-      try {
-        const report = await oneshot(subject.path, VERIFICATION_PROMPT, signal);
-        await safeWriteFile(
-          path.join(subject.path, 'graphify-out', 'VERIFY_REPORT.md'),
-          report.trim() + '\n',
-        );
-        log('verification report written');
-      } catch {
-        if (aborted || signal.aborted) return finish({ status: 'cancelled', partial, error: null });
-        log('verification failed — edges unverified');
-        if (status === 'complete') status = 'partial';
-        partial = [
-          ...(partial ?? []),
-          { file: '(verification)', reason: 'verification failed; edges unverified' },
-        ];
+      const status: PipelineOutcome['status'] = failures.length ? 'partial' : 'complete';
+      return finish(await runVerification(status, failures.length ? failures : null));
+    };
+
+    /** Strict-parse the planner's answer: JSON list of chunk prompt file paths (+ total, the list wins). */
+    const parsePlan = (stdout: string): string[] | null => {
+      const parsed = extractJson(stdout) as { chunks?: unknown } | unknown[] | null;
+      const list = Array.isArray(parsed) ? parsed : parsed?.chunks;
+      if (!Array.isArray(list) || list.length === 0) return null;
+      const chunks: string[] = [];
+      for (const item of list) {
+        if (typeof item !== 'string' || !item) return null;
+        try {
+          if (!existsSync(safeResolve(subject.path, item))) return null; // planner must have written every chunk file
+        } catch {
+          return null; // traversal or bad path → unusable plan
+        }
+        chunks.push(item);
       }
-      return finish({ status, partial, error: null });
+      return chunks;
+    };
+
+    const runWaves = async (): Promise<PipelineOutcome> => {
+      log(`${job.kind} started (job ${job.id.slice(0, 8)})`);
+      log('planning chunk split');
+      // stage 1 — planner one-shot: chunks ONLY, no extraction
+      // (runWaves is only reached for build/update — recluster dispatches to runSingle)
+      const planChild = spawnChild([
+        'run',
+        '--auto',
+        '--agent',
+        'studi0-pipeline',
+        '--standalone',
+        planPrompt(job.kind as 'build' | 'update', subject.name),
+      ]);
+      const planFlush = pipeLines(planChild, handleLine());
+      const planRes = await planChild.done;
+      planFlush();
+      if (aborted || signal.aborted) return finish({ status: 'cancelled', partial: null, error: null });
+      const chunks = planRes.code === 0 ? parsePlan(planRes.stdout) : null;
+      if (!chunks) {
+        // planner misbehaved — the single-run pipeline is safe (subject-local) and keeps the build working
+        log('chunk plan unusable — falling back to single-run pipeline');
+        return runSingle();
+      }
+      log(`chunk plan: ${chunks.length} chunks`);
+      const total = chunks.length;
+
+      // stage 2 — chunk extraction in waves of ≤4 concurrent children
+      let done = 0;
+      const failures: FailureLine[] = [];
+      const runChunk = async (chunk: string): Promise<FailureLine[]> => {
+        const child = spawnChild([
+          'run',
+          '--auto',
+          '--agent',
+          'studi0-pipeline',
+          '--standalone',
+          chunkWavePrompt(chunk),
+        ]);
+        const flush = pipeLines(child, handleLine());
+        const res = await child.done;
+        flush();
+        if (aborted || signal.aborted) return [];
+        if (res.code !== 0) {
+          const stderrTail = res.stderr.split(/\r?\n/).filter(Boolean).slice(-3).join(' | ');
+          console.error(`[job ${job.id}] chunk ${chunk} exited ${res.code}: ${stderrTail || 'no stderr'}`);
+          log(`chunk failed: ${chunk}`);
+          return [{ file: chunk, reason: `chunk run exited with code ${res.code}` }];
+        }
+        const chunkFailures = parseFailures(res.stdout);
+        for (const f of chunkFailures) log(`failed file: ${f.file} — ${f.reason}`);
+        return chunkFailures;
+      };
+      for (let i = 0; i < chunks.length; i += CHUNK_WAVE) {
+        onUpdate({ done, total, currentFile: chunks[i] });
+        // failures accumulate in chunk order — concurrent children must not reorder the report
+        const reported = await Promise.all(chunks.slice(i, i + CHUNK_WAVE).map(runChunk));
+        for (const fl of reported) failures.push(...fl);
+        done = Math.min(i + CHUNK_WAVE, total);
+        if (aborted || signal.aborted) return finish({ status: 'cancelled', partial: null, error: null });
+      }
+      onUpdate({ done, total, currentFile: null });
+
+      // stage 3 — merge + export (same tail as the single-run pipeline)
+      log('merging chunk outputs');
+      const mergeChild = spawnChild([
+        'run',
+        '--auto',
+        '--agent',
+        'studi0-pipeline',
+        '--standalone',
+        mergePrompt(subject.name),
+      ]);
+      const mergeFlush = pipeLines(mergeChild, handleLine());
+      const mergeRes = await mergeChild.done;
+      mergeFlush();
+      if (aborted || signal.aborted) return finish({ status: 'cancelled', partial: null, error: null });
+      if (mergeRes.code !== 0) {
+        const stderrTail = mergeRes.stderr.split(/\r?\n/).filter(Boolean).slice(-3).join(' | ');
+        console.error(`[job ${job.id}] merge run exited ${mergeRes.code}: ${stderrTail || 'no stderr'}`);
+        return finish({
+          status: 'failed',
+          partial: failures.length ? failures : null,
+          error: `merge run exited with code ${mergeRes.code}`,
+        });
+      }
+      if (!existsSync(path.join(subject.path, 'graphify-out', 'graph.json'))) {
+        log('FAILED: run ended without producing graph.json (extraction incomplete? see out: lines above)');
+        return finish({
+          status: 'failed',
+          partial: failures.length ? failures : null,
+          error: 'pipeline run ended without producing graph.json (see build log)',
+        });
+      }
+      for (const f of parseFailures(mergeRes.stdout)) {
+        failures.push(f);
+        log(`failed file: ${f.file} — ${f.reason}`);
+      }
+      const status: PipelineOutcome['status'] = failures.length ? 'partial' : 'complete';
+      return finish(await runVerification(status, failures.length ? failures : null));
+    };
+
+    try {
+      if (job.kind === 'recluster') return await runSingle(); // re-clusters the existing graph — nothing to chunk
+      return await runWaves();
     } finally {
       kills.delete(job.id);
       signal.removeEventListener('abort', abort);
-      // the direct child is gone; reap any descendants it outlived (best-effort)
-      if (pid !== undefined) void killTree(pid);
+      // the direct children are gone; reap any descendants they outlived (best-effort)
+      for (const pid of spawnedPids) void killTree(pid);
     }
   };

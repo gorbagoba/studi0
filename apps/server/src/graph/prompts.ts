@@ -32,6 +32,42 @@ ${PROGRESS_PROTOCOL}
 When finished, reply with one line: DONE <n> files ok, <k> failed.`;
 }
 
+/** Stage 1 of the wave pipeline: plan ONLY — no extraction happens in this run. */
+export function planPrompt(kind: 'build' | 'update', subjectName: string): string {
+  const task =
+    kind === 'build'
+      ? 'BUILD the knowledge graph from all supported files under material/'
+      : 'UPDATE the knowledge graph from the material/ files changed since the last build';
+  return `You are the graph extraction PLANNER for the course subject "${subjectName}". Do NOT extract anything in this run — another process executes each chunk later.
+1. List the material/ files that need graphify extraction to ${task} (graphify pinned version 0.9.95, Python 3).
+2. Split them into chunks of roughly equal size and write one chunk prompt file per chunk under graphify-out/chunks/ (e.g. graphify-out/chunks/chunk-01.md). Each chunk prompt must tell graphify exactly which material/ files to extract in that chunk and must include the ontology below so extraction passes it to graphify.
+3. Reply with ONLY one line of strict JSON, no other text:
+{"chunks":["graphify-out/chunks/chunk-01.md","graphify-out/chunks/chunk-02.md"],"total":<number of chunk files>}
+Paths are relative to the subject root and must match the files you wrote.
+${ONTOLOGY_RULES}
+${PROGRESS_PROTOCOL}`;
+}
+
+/** Stage 2 of the wave pipeline: one headless run per chunk (executed by the runner, ≤4 concurrent). */
+export function chunkWavePrompt(chunkPath: string): string {
+  return `Execute this graphify chunk extraction: read "${chunkPath}" and run graphify (pinned version 0.9.95, Python 3) for exactly the material/ files it lists, resuming from the graphify chunk cache where results already exist.
+Run graphify in this turn — do NOT use the task/subagent tool and do NOT spawn background workers; the runner parallelizes chunks for you.
+${ONTOLOGY_RULES}
+The extraction must pass the ontology to graphify so chunk outputs carry these exact types.
+${PROGRESS_PROTOCOL}
+When finished, reply with one line: DONE <n> files ok, <k> failed.`;
+}
+
+/** Stage 3 of the wave pipeline: merge chunk outputs and export the final artifacts. */
+export function mergePrompt(subjectName: string): string {
+  return `You are the graph extraction pipeline for the course subject "${subjectName}".
+All chunk extractions are done. Run graphify (pinned version 0.9.95, Python 3) to merge the per-chunk extraction outputs under graphify-out/ into the final knowledge graph and export graphify-out/ (graph.json + graph.html + wiki/ + GRAPH_REPORT.md). Do not re-extract files that already have chunk outputs; resume from cache.
+${ONTOLOGY_RULES}
+The merged graph must carry these exact types.
+${PROGRESS_PROTOCOL}
+When finished, reply with one line: DONE <n> files ok, <k> failed.`;
+}
+
 export const VERIFICATION_PROMPT = `You are the graph verification agent.
 1. Read graphify-out/graph.json and sample a representative subset of its edges.
 2. For each sampled edge, source-check it against material/ (slide PDFs, textbook MDs) and graphify-out/wiki/.

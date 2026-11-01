@@ -40,7 +40,7 @@ export function buildApp(opts: { dataDir?: string; dbPath?: string } = {}): Buil
   const events = new EventBus();
   const oc = new OpencodeManager(cfg);
   const oneshot = makeOneshot(cfg);
-  const runPipeline: RunPipelineFn = makeRunPipeline(oneshot, db);
+  const runPipeline: RunPipelineFn = makeRunPipeline(oneshot, db, events);
   const queue = new JobQueue(db, events, cfg, runPipeline);
   const feedQuestions = makeFeedQuestions(db, events, oneshot);
 
