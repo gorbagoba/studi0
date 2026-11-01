@@ -31,7 +31,17 @@ try {
   for (const line of readFileSync(resolve(repoRoot, '.env'), 'utf8').split(/\r?\n/)) {
     const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
     if (!m) continue;
-    if (process.env[m[1]] === undefined) {
+    // only known keys may ride into process.env (and onward to spawned children)
+    const KNOWN_ENV_KEYS = new Set([
+      'PORT',
+      'OC_PORT',
+      'VITE_PORT',
+      'PREVIEW_PORT',
+      'STUDI0_DATA_DIR',
+      'STUDI0_MAX_CHUNK_CONCURRENCY',
+      'STUDI0_SPLIT_TARGET_BYTES',
+    ]);
+    if (KNOWN_ENV_KEYS.has(m[1]) && process.env[m[1]] === undefined) {
       process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
     }
   }

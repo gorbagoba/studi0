@@ -92,6 +92,7 @@ function fireOnce(bin, cwd) {
         detached: !isWin, // process-group leader on POSIX — killTree reaches the whole tree
         stdio: ['ignore', 'pipe', 'pipe'],
       });
+      child.stdout?.resume(); // drain — a full pipe would block the child and fake a timeout
       let finished = false;
       const stderr = [];
       child.stderr?.on('data', (d) => {

@@ -12,7 +12,7 @@ export default defineConfig({
   server: {
     host: '127.0.0.1',
     port: Number(env.VITE_PORT ?? 5173),
-    proxy: { '/api': `http://127.0.0.1:${env.PORT ?? 3001}` },
+    proxy: { '/api': `http://127.0.0.1:${Number(env.PORT) || 3001}` },
   },
   preview: {
     host: '127.0.0.1',

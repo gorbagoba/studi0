@@ -30,6 +30,7 @@ export const PIP_PINS = [
 // sources may drift — registry name is the fallback; failure is a warning, never fatal.
 const SKILL_NAME = 'graphify';
 const SKILL_SOURCES = ['https://github.com/graphify-labs/graphify', 'graphify-labs/graphify'];
+const SKILLS_CLI_PIN = '1.7.4'; // pnpm view skills — re-pin deliberately (typosquat/regression guard)
 const WITH_SKILLS = process.argv.includes('--with-skills');
 
 function run(bin, argv, opts = {}) {
@@ -85,6 +86,10 @@ export function writeEnvFile(changes, { exists = existsSync(path.join(repoRoot, 
   let lines = exists ? read(p).split(/\r?\n/) : [];
   if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop(); // trailing newline
   for (const [k, v] of Object.entries(changes)) {
+    // sink validation: keys are plain identifiers, values never carry newlines/$ (env injection)
+    if (!/^[A-Za-z0-9_]+$/.test(k) || /[\r\n$]/.test(String(v))) {
+      throw new Error(`unsafe .env change: ${k}`);
+    }
     const re = new RegExp(`^(\\s*${k}\\s*=)(.*)$`);
     const i = lines.findIndex((l) => re.test(l));
     if (i >= 0) lines[i] = lines[i].replace(re, `$1${v}`);
@@ -185,8 +190,8 @@ async function maybeInstallGraphifySkill(oc, pnpmOk) {
       })));
   if (!yes) return '– skills install skipped (opt in: `pnpm setup --with-skills`)';
   for (const src of SKILL_SOURCES) {
-    process.stdout.write(`+ pnpm dlx skills add ${src} -g -y --skill ${SKILL_NAME}\n`);
-    const r = run('pnpm', ['dlx', 'skills', 'add', src, '-g', '-y', '--skill', SKILL_NAME], {
+    process.stdout.write(`+ pnpm dlx skills@${SKILLS_CLI_PIN} add ${src} -g -y --skill ${SKILL_NAME}\n`);
+    const r = run('pnpm', ['dlx', `skills@${SKILLS_CLI_PIN}`, 'add', src, '-g', '-y', '--skill', SKILL_NAME], {
       shell: isWin,
       timeout: 0,
     });
