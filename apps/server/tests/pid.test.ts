@@ -13,6 +13,7 @@ vi.mock('../src/util/proc.js', () => ({
   killTreeWithDeadline: mocks.killTreeWithDeadline,
   killTree: async () => undefined,
   isAlive: () => true,
+  commandLineMentions: async () => true,
   resolveOpencodeBin: () => 'opencode-stub',
 }));
 
@@ -69,7 +70,7 @@ describe('job pid bookkeeping', () => {
     jobsRepo.updateJob(seed, 'stale-1', { status: 'running', pid: '999' });
     seed.close();
     const { buildApp } = await import('../src/http/app.js');
-    const boot = buildApp({ dataDir: dir });
+    const boot = await buildApp({ dataDir: dir });
     expect(mocks.killTreeWithDeadline).toHaveBeenCalledWith('999');
     const row = jobsRepo.getJob(boot.ctx.db, 'stale-1');
     expect(row?.status).toBe('failed');

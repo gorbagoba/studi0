@@ -140,14 +140,30 @@ function runPython(
       const child = spawn(bin, a, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
       const stdout: Buffer[] = [];
       const stderr: Buffer[] = [];
-      child.stdout?.on('data', (d: Buffer) => stdout.push(d));
-      child.stderr?.on('data', (d: Buffer) => stderr.push(d));
+      // cap collected output — the only place a hostile file drives a first-party parser
+      const MAX_CAPTURE = 1024 * 1024;
+      let captured = 0;
+      const collect = (buf: Buffer[], d: Buffer) => {
+        if (captured < MAX_CAPTURE) {
+          buf.push(d);
+          captured += d.length;
+        }
+      };
+      child.stdout?.on('data', (d: Buffer) => collect(stdout, d));
+      child.stderr?.on('data', (d: Buffer) => collect(stderr, d));
       const timer = setTimeout(() => {
         if (child.pid !== undefined) killTreeWithDeadline(child.pid);
         else child.kill();
       }, timeoutMs);
       timer.unref();
-      child.on('error', reject);
+      // spawn reports ENOENT asynchronously — fall back to the py launcher here
+      child.on('error', (err: NodeJS.ErrnoException) => {
+        if (err.code === 'ENOENT' && bin === 'python') {
+          resolve(run('py', ['-3', ...a]));
+          return;
+        }
+        reject(err);
+      });
       child.on('close', (code) => {
         clearTimeout(timer);
         resolve({
@@ -157,12 +173,7 @@ function runPython(
         });
       });
     });
-  try {
-    return run('python', args);
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return run('py', ['-3', ...args]);
-    throw e;
-  }
+  return run('python', args);
 }
 
 /**
@@ -197,7 +208,8 @@ export async function splitPdf(
   if (res.code !== 0) {
     const tail = res.stderr.split(/\r?\n/).filter(Boolean).slice(-3).join(' | ');
     console.error(`[split-pdf ${relFile}] exited ${res.code}: ${tail || 'no stderr'}`);
-    throw new HttpError('INTERNAL', `pdf split failed: ${tail || `python exited with code ${res.code}`}`);
+    // internals (local paths, library noise) stay server-side — match the runner's pattern
+    throw new HttpError('INTERNAL', `pdf split failed (see server log)`);
   }
   const parsed = JSON.parse(res.stdout) as { parts?: unknown };
   if (!Array.isArray(parsed.parts) || parsed.parts.length === 0) {

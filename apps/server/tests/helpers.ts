@@ -13,7 +13,7 @@ export async function makeHarness(
   opts: { dataDir?: string; dbPath?: string } = {},
 ): Promise<TestHarness> {
   const dataDir = opts.dataDir ?? (await mkdtemp(path.join(tmpdir(), 'studi0-test-')));
-  const { app, ctx } = buildApp({ dataDir, dbPath: opts.dbPath });
+  const { app, ctx } = await buildApp({ dataDir, dbPath: opts.dbPath });
   return {
     app,
     ctx,

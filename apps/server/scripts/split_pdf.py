@@ -39,7 +39,7 @@ def main() -> None:
     try:
         from pypdf import PdfReader, PdfWriter
     except ImportError:
-        fail("pypdf is not installed — run: pip install pypdf")
+        fail("pypdf is not installed - run: pip install 'pypdf>=6,<7'")
 
     try:
         reader = PdfReader(src)
@@ -51,6 +51,14 @@ def main() -> None:
         n_parts = math.ceil(total / pages_per)
         width = max(2, len(str(n_parts)))
         stem = os.path.splitext(os.path.basename(src))[0]
+        # pre-flight: overwrite only this split's own previous parts — never an
+        # unrelated upload that happens to match a part name (L2)
+        existing = [
+            os.path.join(out_dir, f"{stem}_p{i + 1:0{width}d}.pdf") for i in range(n_parts)
+        ]
+        clashes = [p for p in existing if os.path.exists(p)]
+        if clashes and len(clashes) != n_parts:
+            fail(f"part name already exists (refusing to overwrite): {os.path.basename(clashes[0])}")
         parts = []
         for i in range(n_parts):
             writer = PdfWriter()

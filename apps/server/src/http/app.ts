@@ -6,7 +6,7 @@ import { openDb, type Db } from '../db/index.js';
 import { closeStaleRunning, staleRunningPids } from '../db/repos/jobs.js';
 import { EventBus } from './sse.js';
 import { HttpError } from '../util/errors.js';
-import { isAlive, killTreeWithDeadline } from '../util/proc.js';
+import { commandLineMentions, isAlive, killTreeWithDeadline } from '../util/proc.js';
 import { makeOneshot } from '../util/oneshot.js';
 import { JobQueue } from '../pipeline/queue.js';
 import { makeRunPipeline, type RunPipelineFn } from '../pipeline/runner.js';
@@ -27,13 +27,19 @@ export interface BuiltApp {
   ctx: Ctx;
 }
 
-export function buildApp(opts: { dataDir?: string; dbPath?: string } = {}): BuiltApp {
+export async function buildApp(opts: { dataDir?: string; dbPath?: string } = {}): Promise<BuiltApp> {
   const cfg: Config = makeConfig(opts.dataDir);
   const db: Db = openDb(opts.dbPath ?? cfg.dbPath);
 
-  // boot cleanup: kill-tree orphans a previous life left writing, then close their rows honestly
+  // boot cleanup: kill-tree orphans a previous life left writing, then close their rows honestly.
+  // Identity before destruction (pid reuse): only reap pids whose command line still names opencode.
   for (const pid of staleRunningPids(db)) {
-    if (isAlive(pid)) killTreeWithDeadline(pid);
+    if (!isAlive(pid)) continue;
+    if (await commandLineMentions(pid, 'opencode')) {
+      killTreeWithDeadline(pid);
+    } else {
+      console.warn(`[boot] stale pid ${pid} is no longer opencode — skipping kill`);
+    }
   }
   closeStaleRunning(db);
 
@@ -50,12 +56,11 @@ export function buildApp(opts: { dataDir?: string; dbPath?: string } = {}): Buil
 
   // CSRF-class guard: drive-by POSTs from any website. Browsers always send
   // Origin/Sec-Fetch-Site on such requests; header-absent clients (curl, tests) pass.
-  // The Host allowlist additionally blocks DNS-rebinding pages, whose fetches are
+  // The Host allowlist applies to EVERY request (GETs included — the log/lessons/
+  // chat reads are not for rebinding pages either); a rebinding page's fetches are
   // legitimately "same-origin" (Fetch Metadata cannot see them) but carry an
   // attacker-controlled Host header they cannot spoof.
   app.addHook('onRequest', async (req, reply) => {
-    const mutating = req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH' || req.method === 'DELETE';
-    if (!mutating) return;
     const reject = () =>
       reply.status(403).send({ error: { code: 'VALIDATION', message: 'cross-origin request rejected' } });
     const allowedHosts = [
@@ -71,6 +76,8 @@ export function buildApp(opts: { dataDir?: string; dbPath?: string } = {}): Buil
     ];
     const host = req.headers.host ?? '';
     if (!allowedHosts.includes(host)) return reject();
+    const mutating = req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH' || req.method === 'DELETE';
+    if (!mutating) return;
     const origin = req.headers.origin;
     const site = req.headers['sec-fetch-site'];
     if (origin === undefined && site === undefined) return;

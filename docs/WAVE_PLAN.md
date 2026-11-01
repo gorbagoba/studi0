@@ -13,6 +13,10 @@
 - **PDF-split**: `POST /api/subjects/:id/split-pdf {file}` → python (`pypdf`) splits into `<stem>_pNN.pdf` next to the original in `material/`; original untouched; response lists parts. File-browser action on PDFs.
 - **Stop script**: `scripts/stop.mjs` — finds listeners on 3001/5173/44096 (netstat), verifies identity (command line contains `node`/`opencode`/`tsx`), `taskkill /T /F` each; POSIX branch best-effort (`kill -pid`). Root script `stop`. UI shutdown confirm fetches `/api/health` first and lists jobs/teacher; post-shutdown page shows copyable `pnpm dev`.
 
+## Deferred (tracked)
+
+- **L5 (security review): agent-child env allowlist** — wave children inherit the full process env (provider keys reachable by LLM-driven bash). Pre-existing, now multiplied by wave children. Fix: explicit env allowlist in `proc.ts` spawnArgs + verify opencode's edit-permission cwd scoping. Tracked ticket, not a wave blocker.
+
 ## Risks
 - Wave runner must keep API-contract shapes (progress/log) stable — addendum documents the new `log` SSE event + split endpoint.
 - pypdf availability in the managed python env — verify at implement time; fallback `pip install pypdf` documented in BUILD.md.

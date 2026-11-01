@@ -148,7 +148,7 @@ describe('pipeline job queue (T04)', () => {
     // simulate a server restart on the same data dir
     await h.app.close();
     h.ctx.db.close();
-    const restarted = buildApp({ dataDir: h.dataDir });
+    const restarted = await buildApp({ dataDir: h.dataDir });
     const row = restarted.ctx.db
       .prepare('SELECT * FROM jobs WHERE id = ?')
       .get('stale-job') as unknown as { status: string; error: string };

@@ -207,14 +207,20 @@ export const makeRunPipeline =
       return finish(await runVerification(status, failures.length ? failures : null));
     };
 
-    /** Strict-parse the planner's answer: JSON list of chunk prompt file paths (+ total, the list wins). */
+    /** Strict-parse the planner's answer: JSON list of chunk prompt file paths (+ total, the list wins).
+     * Confined to the declared shape (graphify-out/chunks/<single-segment>.md) and capped — the planner's
+     * output is model text crossing into path selection and prompt construction (LLM05/LLM01):
+     * a confused/hijacked planner must degrade to the safe single-run fallback, never fan out. */
     const parsePlan = (stdout: string): string[] | null => {
       const parsed = extractJson(stdout) as { chunks?: unknown } | unknown[] | null;
       const list = Array.isArray(parsed) ? parsed : parsed?.chunks;
-      if (!Array.isArray(list) || list.length === 0) return null;
+      const MAX_CHUNKS = 64;
+      if (!Array.isArray(list) || list.length === 0 || list.length > MAX_CHUNKS) return null;
       const chunks: string[] = [];
       for (const item of list) {
-        if (typeof item !== 'string' || !item) return null;
+        if (typeof item !== 'string' || !/^graphify-out\/chunks\/[A-Za-z0-9._-]+\.md$/.test(item)) {
+          return null;
+        }
         try {
           if (!existsSync(safeResolve(subject.path, item))) return null; // planner must have written every chunk file
         } catch {

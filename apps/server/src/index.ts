@@ -3,7 +3,7 @@ import { ensureLayout, syncTeacherAgent } from './fs/layout.js';
 import { listSubjects } from './db/repos/subjects.js';
 import { detectAndIndexLessons } from './teacher/lessons.js';
 
-const { app, ctx } = buildApp();
+const { app, ctx } = await buildApp();
 // resync the canonical teacher agent file into every registered subject
 for (const subject of listSubjects(ctx.db)) {
   try {
