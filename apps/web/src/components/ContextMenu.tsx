@@ -99,12 +99,7 @@ export function ContextMenu({ menu, onClose }: { menu: MenuState | null; onClose
     >
       {menu.items.map((item, i) =>
         item.submenu !== undefined ? (
-          <div
-            key={item.label}
-            className="ctx-sub"
-            onMouseEnter={() => setSubOpen(i)}
-            onMouseLeave={() => setSubOpen(null)}
-          >
+          <div key={item.label} className="ctx-sub">
             <button
               type="button"
               role="menuitem"
@@ -112,19 +107,19 @@ export function ContextMenu({ menu, onClose }: { menu: MenuState | null; onClose
               className="ctx-item"
               aria-haspopup="true"
               aria-expanded={subOpen === i}
-              onClick={() => setSubOpen(i)}
+              onClick={() => setSubOpen(subOpen === i ? null : i)}
             >
-              {item.label} ▸
+              {item.label} {subOpen === i ? '▾' : '▸'}
             </button>
             {subOpen === i && (
-              <div className="ctx-menu ctx-submenu" role="menu" aria-label={item.label}>
+              <div className="ctx-inline-sub" role="menu" aria-label={item.label}>
                 {item.submenu.map((sub) => (
                   <button
                     key={sub.label}
                     type="button"
                     role="menuitem"
                     tabIndex={-1}
-                    className={`ctx-item${sub.danger ? ' danger' : ''}`}
+                    className={`ctx-item ctx-sub-item${sub.danger ? ' danger' : ''}`}
                     onClick={() => runItem(sub)}
                   >
                     {sub.label}
