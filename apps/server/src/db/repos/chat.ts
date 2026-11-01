@@ -12,6 +12,7 @@ export interface ChatSessionRow {
   summary_path: string | null;
   created_at: string;
   rotated_at: string | null;
+  title: string | null;
 }
 
 export function sessionToDto(row: ChatSessionRow): ChatSession {
@@ -24,6 +25,7 @@ export function sessionToDto(row: ChatSessionRow): ChatSession {
     summaryPath: row.summary_path,
     createdAt: row.created_at,
     lastMessageAt: row.rotated_at,
+    title: row.title,
   };
 }
 
@@ -54,6 +56,10 @@ export function sessionAfterTurn(db: Db, id: string): void {
   db.prepare(
     'UPDATE chat_sessions SET msg_count = msg_count + 2, rotated_at = ? WHERE id = ?',
   ).run(new Date().toISOString(), id);
+}
+
+export function renameSession(db: Db, id: string, title: string): void {
+  db.prepare('UPDATE chat_sessions SET title = ? WHERE id = ?').run(title, id);
 }
 
 export function rotateSession(db: Db, id: string, summaryPath: string): void {

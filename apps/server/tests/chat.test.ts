@@ -64,6 +64,32 @@ async function createSubject(name: string): Promise<string> {
 }
 
 describe('teacher chat (T06)', () => {
+  it('renames a chat session (PATCH title) and 404s unknown sessions', async () => {
+    h = await makeHarness();
+    const id = await createSubject('ChatRename');
+    patchOc(h, fakeClient('oc-rename'));
+    const s = (
+      await h.app.inject({ method: 'POST', url: `/api/subjects/${id}/chat/sessions`, payload: {} })
+    ).json();
+    const res = await h.app.inject({
+      method: 'PATCH',
+      url: `/api/chat/sessions/${s.id}`,
+      payload: { title: '  Heaps deep-dive  ' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().title).toBe('Heaps deep-dive');
+    const list = await h.app.inject({ method: 'GET', url: `/api/subjects/${id}/chat/sessions` });
+    expect(list.json()[0].title).toBe('Heaps deep-dive');
+    const bad = await h.app.inject({ method: 'PATCH', url: '/api/chat/sessions/nope', payload: { title: 'x' } });
+    expect(bad.statusCode).toBe(404);
+    const empty = await h.app.inject({
+      method: 'PATCH',
+      url: `/api/chat/sessions/${s.id}`,
+      payload: { title: '' },
+    });
+    expect(empty.statusCode).toBe(400);
+  });
+
   it('creates an opencode session eagerly; 503 when opencode is down', async () => {
     h = await makeHarness();
     const id = await createSubject('Chat1');

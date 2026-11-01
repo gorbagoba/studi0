@@ -1,7 +1,7 @@
 ﻿import type { FastifyInstance } from 'fastify';
 import type { Ctx } from '../../context.js';
 import { parseWith } from '../validate.js';
-import { createSessionBodySchema, sendMessageBodySchema } from '@studi0/shared';
+import { createSessionBodySchema, renameChatSessionBodySchema, sendMessageBodySchema } from '@studi0/shared';
 import { requireSubject } from '../../subjects/service.js';
 import * as chatRepo from '../../db/repos/chat.js';
 import * as lessonsRepo from '../../db/repos/lessons.js';
@@ -47,6 +47,16 @@ export async function registerChatRoutes(app: FastifyInstance, ctx: Ctx): Promis
     if (!session) throw new HttpError('SESSION_NOT_FOUND', 'session not found');
     oc.ensureUp();
     return fetchHistory(oc.client(), session.oc_session_id);
+  });
+
+  app.patch('/api/chat/sessions/:id', async (req) => {
+    const session = chatRepo.getSession(db, (req.params as { id: string }).id);
+    if (!session) throw new HttpError('SESSION_NOT_FOUND', 'session not found');
+    const body = parseWith(renameChatSessionBodySchema, req.body);
+    chatRepo.renameSession(db, session.id, body.title.trim());
+    const fresh = chatRepo.getSession(db, session.id);
+    if (!fresh) throw new HttpError('SESSION_NOT_FOUND', 'session not found');
+    return sessionToDto(fresh);
   });
 
   app.post('/api/chat/sessions/:id/messages', async (req, reply) => {

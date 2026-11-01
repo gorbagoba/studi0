@@ -205,6 +205,9 @@ export const getSessions = (id: ID): Promise<ChatSession[]> =>
 export const createSession = (id: ID, body: CreateSessionRequest): Promise<ChatSession> =>
   send<ChatSession>('POST', `/api/subjects/${id}/chat/sessions`, body);
 
+export const renameChatSession = (sessionId: ID, title: string): Promise<ChatSession> =>
+  send<ChatSession>('PATCH', `/api/chat/sessions/${sessionId}`, { title });
+
 export const getMessages = (sessionId: ID): Promise<ChatMessage[]> =>
   api<ChatMessage[]>(`/api/chat/sessions/${sessionId}/messages`);
 

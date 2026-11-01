@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent, KeyboardEvent } from 'react';
 import type { ChatMessage, ChatSession, ID } from '@studi0/shared';
-import { ApiError, createSession, displayError, getMessages, getSessions } from '../api/client';
+import { ApiError, createSession, displayError, getMessages, getSessions, renameChatSession } from '../api/client';
 import { postChatStream } from '../api/sse';
 import { CitationText } from '../lesson/CitationText';
 import { ErrorBanner } from '../components/ErrorBanner';
@@ -32,9 +32,12 @@ export function ChatPanel({
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [booting, setBooting] = useState(true);
+  // subject-level chats start on the session list; entering one reveals the conversation
+  const [entered, setEntered] = useState(false);
   const streaming = streamText !== null;
 
   async function openSession(s: ChatSession): Promise<void> {
+    setEntered(true);
     setSession(s);
     setError(null);
     try {
@@ -52,8 +55,8 @@ export function ChatPanel({
     }
   }
 
-  // Bootstrap: reuse the newest active session for this scope, else create one eagerly
-  // (session creation fails here with OPENCODE_DOWN rather than mid-message).
+  // Bootstrap: lesson-scoped chats open straight into the conversation; subject-level
+  // chats show the session list first and only open a chat when the user enters one.
   useEffect(() => {
     let stopped = false;
     setBooting(true);
@@ -61,8 +64,15 @@ export function ChatPanel({
     setSession(null);
     setStreamText(null);
     setError(null);
+    setEntered(lessonId === undefined && showSessions);
     void (async () => {
       try {
+        if (lessonId === undefined && showSessions) {
+          const all = await getSessions(subjectId);
+          if (stopped) return;
+          setSessions(all);
+          return;
+        }
         const all = await getSessions(subjectId);
         if (stopped) return;
         setSessions(all);
@@ -80,6 +90,17 @@ export function ChatPanel({
       stopped = true;
     };
   }, [subjectId, lessonId]);
+
+  async function renameChat(s: ChatSession, title: string): Promise<void> {
+    setError(null);
+    try {
+      const fresh = await renameChatSession(s.id, title);
+      setSessions((all) => all.map((x) => (x.id === fresh.id ? fresh : x)));
+      setSession((cur) => (cur?.id === fresh.id ? fresh : cur));
+    } catch (e) {
+      setError(displayError(e));
+    }
+  }
 
   async function newChat(): Promise<void> {
     setError(null);
@@ -173,21 +194,40 @@ export function ChatPanel({
     }
   }
 
+  const listing = showSessions && !entered;
+
   return (
     <section className="chat" aria-label={lessonId !== undefined ? 'Lesson chat' : 'Subject chat'}>
       <div className="chat-head">
-        <h3>{lessonId !== undefined ? 'Ask about this lesson' : 'Ask the teacher'}</h3>
-        {showSessions && (
+        {showSessions && entered && (
+          <button type="button" className="btn btn-small" onClick={() => setEntered(false)}>
+            ← All chats
+          </button>
+        )}
+        <h3>
+          {listing
+            ? 'Your chats'
+            : lessonId !== undefined
+              ? 'Ask about this lesson'
+              : session?.title ?? 'Ask the teacher'}
+        </h3>
+      </div>
+      {error !== null && <ErrorBanner message={error} />}
+      {listing ? (
+        booting ? (
+          <p className="muted" role="status">
+            Loading chats…
+          </p>
+        ) : (
           <SessionList
             sessions={sessions}
             currentId={session?.id ?? null}
             onSelect={(s) => void openSession(s)}
             onNew={() => void newChat()}
+            onRename={(s, t) => void renameChat(s, t)}
           />
-        )}
-      </div>
-      {error !== null && <ErrorBanner message={error} />}
-      {booting ? (
+        )
+      ) : booting ? (
         <p className="muted" role="status">
           Connecting to the teacher…
         </p>

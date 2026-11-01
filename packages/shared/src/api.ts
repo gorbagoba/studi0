@@ -150,6 +150,7 @@ export const chatSessionSchema = z.object({
   summaryPath: z.string().nullable(),
   createdAt: isoSchema,
   lastMessageAt: isoSchema.nullable(),
+  title: z.string().nullable(),
 });
 export type ChatSession = z.infer<typeof chatSessionSchema>;
 
@@ -257,6 +258,9 @@ export const renameSubjectBodySchema = z.object({
 /** Irreversible disk delete — the body must echo the exact subject name. */
 export const deleteFilesBodySchema = z.object({ confirm: z.string().min(1) });
 export type DeleteFilesRequest = z.infer<typeof deleteFilesBodySchema>;
+
+export const renameChatSessionBodySchema = z.object({ title: z.string().min(1).max(80) });
+export type RenameChatSessionRequest = z.infer<typeof renameChatSessionBodySchema>;
 
 export const createGroupBodySchema = z.object({ name: z.string().min(1).max(120) });
 export type CreateGroupRequest = z.infer<typeof createGroupBodySchema>;
