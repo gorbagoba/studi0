@@ -1070,9 +1070,10 @@ dl.diag-list dd.diag-status {
 .lessons-pane.lesson-open {
   display: flex;
   flex-direction: column;
-  margin: -1.25rem -1.5rem;
+  margin: 0 -1.5rem;
   width: calc(100% + 3rem);
-  min-height: calc(100vh - 8.5rem);
+  min-height: calc(100vh - 7.5rem);
+  padding: 0.9rem 2.5rem 0; /* top + side breathing room */
 }
 
 .lessons-pane.lesson-open .lesson-viewer {
