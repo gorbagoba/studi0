@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type {
   GraphInfo,
   GraphReport,
+  Group,
   ID,
   Lesson,
   Question,
@@ -56,6 +57,9 @@ function useFetch<T>(
 
 export const useSubjects = (): FetchState<Subject[]> & { reload: () => void } =>
   useFetch(client.getSubjects, []);
+
+export const useGroups = (): FetchState<Group[]> & { reload: () => void } =>
+  useFetch(client.getGroups, []);
 
 export const useSubject = (id: ID): FetchState<SubjectDetail> & { reload: () => void } =>
   useFetch(() => client.getSubject(id), [id]);

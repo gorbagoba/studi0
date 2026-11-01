@@ -26,6 +26,8 @@ export function subjectToDto(row: SubjectRow, stale: boolean): Subject {
     createdAt: row.created_at,
     lastBuiltAt: row.last_built_at,
     stale,
+    groupId: row.group_id,
+    groupName: row.group_name ?? null,
   };
 }
 

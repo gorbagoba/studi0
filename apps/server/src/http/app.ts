@@ -16,6 +16,7 @@ import type { Ctx } from '../context.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerSubjectRoutes } from './routes/subjects.js';
 import { registerFileRoutes } from './routes/files.js';
+import { registerGroupRoutes } from './routes/groups.js';
 import { registerJobRoutes } from './routes/jobs.js';
 import { registerGraphRoutes } from './routes/graph.js';
 import { registerLessonRoutes } from './routes/lessons.js';
@@ -121,6 +122,7 @@ export async function buildApp(opts: { dataDir?: string; dbPath?: string } = {})
   registerHealthRoutes(app, ctx);
   registerSubjectRoutes(app, ctx);
   registerFileRoutes(app, ctx);
+  registerGroupRoutes(app, ctx);
   registerJobRoutes(app, ctx);
   registerGraphRoutes(app, ctx);
   registerLessonRoutes(app, ctx);

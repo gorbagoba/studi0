@@ -1,9 +1,15 @@
 ﻿import type { FastifyInstance } from 'fastify';
 import type { Ctx } from '../../context.js';
 import { parseWith } from '../validate.js';
-import { courseSetupBodySchema, createSubjectBodySchema, renameSubjectBodySchema } from '@studi0/shared';
+import {
+  courseSetupBodySchema,
+  createSubjectBodySchema,
+  mergeBodySchema,
+  renameSubjectBodySchema,
+} from '@studi0/shared';
 import { applySetupToMission } from '../../subjects/mission.js';
 import * as subjectsRepo from '../../db/repos/subjects.js';
+import * as groupsRepo from '../../db/repos/groups.js';
 import {
   requireSubject,
   registerSubject,
@@ -12,6 +18,7 @@ import {
   computeStale,
   listSubjectDtos,
 } from '../../subjects/service.js';
+import { mergeSubject, deleteSubjectFiles } from '../../subjects/files.js';
 import { HttpError } from '../../util/errors.js';
 
 export async function registerSubjectRoutes(app: FastifyInstance, ctx: Ctx): Promise<void> {
@@ -40,11 +47,28 @@ export async function registerSubjectRoutes(app: FastifyInstance, ctx: Ctx): Pro
     const id = (req.params as { id: string }).id;
     const body = parseWith(renameSubjectBodySchema, req.body);
     const row = requireSubject(db, id);
-    if (subjectsRepo.getSubjectByName(db, body.name)) {
+    if (body.groupId !== undefined && body.groupId !== null && !groupsRepo.getGroup(db, body.groupId)) {
+      throw new HttpError('GROUP_NOT_FOUND', `group ${body.groupId} not found`);
+    }
+    if (body.name !== row.name && subjectsRepo.getSubjectByName(db, body.name)) {
       throw new HttpError('NAME_TAKEN', `a subject named "${body.name}" already exists`);
     }
     subjectsRepo.renameSubject(db, id, body.name);
-    return subjectToDto({ ...row, name: body.name }, await computeStale(row));
+    if (body.groupId !== undefined) subjectsRepo.setSubjectGroup(db, id, body.groupId);
+    const fresh = subjectsRepo.getSubject(db, id) as subjectsRepo.SubjectRow;
+    return subjectToDto(fresh, await computeStale(row));
+  });
+
+  app.post('/api/subjects/:id/merge-into', async (req) => {
+    const source = requireSubject(db, (req.params as { id: string }).id);
+    const { targetId } = parseWith(mergeBodySchema, req.body);
+    return mergeSubject(db, source, targetId);
+  });
+
+  app.post('/api/subjects/:id/delete-files', async (req) => {
+    const subject = requireSubject(db, (req.params as { id: string }).id);
+    await deleteSubjectFiles(db, ctx.cfg, subject);
+    return { ok: true };
   });
 
   app.delete('/api/subjects/:id', async (req, reply) => {

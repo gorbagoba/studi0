@@ -22,7 +22,7 @@ type ID = string;   // uuid
 type ISO = string;  // ISO-8601
 
 type ErrorCode =
-  | "VALIDATION" | "SUBJECT_NOT_FOUND" | "NAME_TAKEN" | "PATH_NOT_FOUND"
+  | "VALIDATION" | "SUBJECT_NOT_FOUND" | "GROUP_NOT_FOUND" | "NAME_TAKEN" | "PATH_NOT_FOUND"
   | "FILE_NOT_FOUND" | "UNSUPPORTED_FILE_TYPE" | "PATH_TRAVERSAL"
   | "JOB_NOT_FOUND" | "JOB_CONFLICT" | "JOB_NOT_CANCELLABLE"
   | "SESSION_NOT_FOUND" | "SESSION_GONE" | "TURN_IN_PROGRESS" | "OPENCODE_DOWN"
@@ -32,6 +32,7 @@ interface Subject {
   id: ID; name: string; path: string;      // path = absolute subject root (reference-in-place)
   createdAt: ISO; lastBuiltAt: ISO | null;
   stale: boolean;                           // computed: any material/** mtime > lastBuiltAt
+  groupId: ID | null; groupName: string | null;  // null = ungrouped (single-level groups)
 }
 interface SubjectDetail extends Subject {
   graphStatus: "none" | "ready" | "stale" | "building";  // derived
@@ -39,8 +40,19 @@ interface SubjectDetail extends Subject {
   counts: { lessons: number; questions: number; due: number };
 }
 
+interface Group {
+  id: ID; name: string;
+  subjectCount: number;                     // computed
+  createdAt: ISO;
+}
+
 interface FileEntry { path: string; dir: string; name: string; ext: string; bytes: number; mtime: ISO }
 // path is relative to the subject root, e.g. "material/week3/heaps.pdf"
+
+interface FileRow extends FileEntry {      // files-table row (per-file move response)
+  id: ID; subjectId: ID;
+  origin: "upload" | "seed";
+}
 
 type JobKind = "build" | "update" | "recluster";
 type JobStatus = "queued" | "running" | "cancelling" | "complete" | "partial" | "failed" | "cancelled";
@@ -102,12 +114,35 @@ No files are copied or moved (AC1).
 `GET /api/subjects/:id`
 → `200 SubjectDetail` · `404 SUBJECT_NOT_FOUND`
 
-`PATCH /api/subjects/:id` — rename display name only (folder untouched).
-`{ name: string }`
-→ `200 Subject` · `404 SUBJECT_NOT_FOUND` · `409 NAME_TAKEN`
+`PATCH /api/subjects/:id` — rename display name only (folder untouched), and/or move the subject into a group. An unchanged `name` is allowed (so `{ name, groupId }` works as a pure group move).
+`{ name: string; groupId?: ID | null }` — `groupId: null` (or omitted → unchanged) ungroups.
+→ `200 Subject` · `404 SUBJECT_NOT_FOUND | GROUP_NOT_FOUND` · `409 NAME_TAKEN` (a *different* subject has that name)
 
 `DELETE /api/subjects/:id` — **unregister only; never touches disk.**
 → `204` · `404 SUBJECT_NOT_FOUND`
+
+`POST /api/subjects/:id/merge-into` — merge this subject into another: every file registered under the source's `material/` moves into the target's `material/` (same relative path); file rows re-point. **Name collisions are skipped and reported** (the target's file wins). Lessons, `reference/`, `learning-records/`, `graphify-out/` are outputs and stay with their subject. The source subject remains registered (material-empty), its graph untouched.
+`{ targetId: ID }` (`targetId ≠ id`)
+→ `200 { moved: string[]; skipped: string[] }` (paths relative to the subject root) · `400 VALIDATION` (self-merge) · `404 SUBJECT_NOT_FOUND`
+
+`POST /api/subjects/:id/delete-files` — **IRREVERSIBLE, typed-confirm in the UI.** Refused while the subject has a queued/running/cancelling job. Otherwise deletes the subject's **ROOT folder from disk** (`rm -rf` semantics — `material/`, `lessons/`, `reference/`, `graphify-out/`, `learning-records/`, everything), closes the file rows and unregisters the subject. **There is no undo and no recycle bin.** The endpoint verifies the folder on disk still realpaths to the registered subject path (a junction/symlink swap is refused) before deleting.
+→ `200 { ok: true }` · `404 SUBJECT_NOT_FOUND` · `409 JOB_CONFLICT` (active job) · `400 PATH_NOT_FOUND | PATH_TRAVERSAL`
+
+### Groups
+
+`GET /api/groups`
+→ `200 Group[]` (with computed `subjectCount`, oldest first)
+
+`POST /api/groups`
+`{ name: string }`
+→ `201 Group` · `409 NAME_TAKEN`
+
+`PATCH /api/groups/:id`
+`{ name: string }`
+→ `200 Group` · `404 GROUP_NOT_FOUND` · `409 NAME_TAKEN`
+
+`DELETE /api/groups/:id` — the group's subjects become ungrouped (`groupId = null`); subjects are **never** deleted.
+→ `200 { ok: true }` · `404 GROUP_NOT_FOUND`
 
 ### Files (browser + batch upload)
 
@@ -119,6 +154,17 @@ No files are copied or moved (AC1).
 
 `POST /api/subjects/:id/split-pdf` — **PDF-split assistant**: splits a big material PDF into parts next to the original (python + `pypdf`, `apps/server/scripts/split_pdf.py`). `{ file: string }` is a path relative to the subject root and **must resolve inside `material/`** (traversal is a hard gate). Heuristic: parts of ~10–20 MB — `ceil(fileBytes / 15 MB)` parts, pages distributed evenly (target tunable via `STUDI0_SPLIT_TARGET_BYTES`); files at or below the target are returned unsplit as `[file]`. Parts are named `<stem>_pNN.pdf`; the original is never written; new parts are synced into the files table like uploads and are picked up by the next build.
 → `200 { parts: string[] }` (paths relative to the subject root) · `404 SUBJECT_NOT_FOUND | FILE_NOT_FOUND` · `400 PATH_TRAVERSAL` · `415 UNSUPPORTED_FILE_TYPE` (not a `.pdf`) · `500 INTERNAL` (python/pypdf failure)
+
+`POST /api/files/:fileId/move` — move one registered file into another subject. Only `material/` files move (in either subject); the disk file lands in the target's `material/` at the same relative path and the row re-points. A name collision in the target refuses the move (the existing file stays put).
+`{ targetSubjectId: ID }`
+→ `200 FileRow` (updated row, `subjectId` = target) · `404 FILE_NOT_FOUND | SUBJECT_NOT_FOUND` · `400 VALIDATION` (non-`material/` file) · `409 NAME_TAKEN` (collision)
+
+`PATCH /api/files/:fileId` — rename a `material/` file on disk and re-point its row. Non-`material/` files (teacher outputs) → 400.
+`{ name: string }`
+→ `200 FileRow` · `400 VALIDATION` · `404 FILE_NOT_FOUND` · `409 NAME_TAKEN` (collision)
+
+`DELETE /api/files/:fileId` — delete a `material/` file from disk and remove its row. Non-`material/` files → 400.
+→ `200 { ok: true }` · `400 VALIDATION` · `404 FILE_NOT_FOUND`
 
 ### Jobs (graph pipeline)
 
@@ -244,7 +290,7 @@ Pre-stream JSON errors (before any SSE byte): `400 VALIDATION` · `404 SESSION_N
 | Code | Status |
 |---|---|
 | VALIDATION, PATH_NOT_FOUND, PATH_TRAVERSAL | 400 |
-| SUBJECT_NOT_FOUND, FILE_NOT_FOUND, JOB_NOT_FOUND, SESSION_NOT_FOUND, QUESTION_NOT_FOUND | 404 |
+| SUBJECT_NOT_FOUND, GROUP_NOT_FOUND, FILE_NOT_FOUND, JOB_NOT_FOUND, SESSION_NOT_FOUND, QUESTION_NOT_FOUND | 404 |
 | NAME_TAKEN, JOB_CONFLICT, JOB_NOT_CANCELLABLE, KEY_NOT_VERIFIED, TURN_IN_PROGRESS | 409 |
 | SESSION_GONE | 410 |
 | UNSUPPORTED_FILE_TYPE | 415 |

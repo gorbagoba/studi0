@@ -18,7 +18,8 @@ export async function safeWriteFile(filePath: string, data: string | Uint8Array)
   }
 }
 
-async function renameWithRetry(from: string, to: string): Promise<void> {
+/** One rename retry after a beat — survives transient AV/OneDrive locks. */
+export async function renameWithRetry(from: string, to: string): Promise<void> {
   try {
     await rename(from, to);
   } catch {

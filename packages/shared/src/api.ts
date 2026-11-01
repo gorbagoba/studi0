@@ -42,6 +42,8 @@ export const subjectSchema = z.object({
   createdAt: isoSchema,
   lastBuiltAt: isoSchema.nullable(),
   stale: z.boolean(),
+  groupId: idSchema.nullable(),
+  groupName: z.string().nullable(),
 });
 export type Subject = z.infer<typeof subjectSchema>;
 
@@ -76,7 +78,17 @@ export const subjectDetailSchema = subjectSchema.extend({
 });
 export type SubjectDetail = z.infer<typeof subjectDetailSchema>;
 
+export const groupSchema = z.object({
+  id: idSchema,
+  name: z.string(),
+  subjectCount: z.number().int(),
+  createdAt: isoSchema,
+});
+export type Group = z.infer<typeof groupSchema>;
+
 export const fileEntrySchema = z.object({
+  /** files-table row id — present on registered files (material/), absent for bare dirs */
+  id: z.string().optional(),
   path: z.string(),
   dir: z.string(),
   name: z.string(),
@@ -85,6 +97,17 @@ export const fileEntrySchema = z.object({
   mtime: isoSchema,
 });
 export type FileEntry = z.infer<typeof fileEntrySchema>;
+
+export const renameFileBodySchema = z.object({ name: z.string().min(1).max(160) });
+export type RenameFileRequest = z.infer<typeof renameFileBodySchema>;
+
+/** A files-table row (used by the per-file move response). */
+export const fileRowSchema = fileEntrySchema.extend({
+  id: idSchema,
+  subjectId: idSchema,
+  origin: z.enum(['upload', 'seed']),
+});
+export type FileRow = z.infer<typeof fileRowSchema>;
 
 export const treeResponseSchema = z.object({
   dir: z.string(),
@@ -228,7 +251,26 @@ export type CreateSubjectRequest = z.infer<typeof createSubjectBodySchema>;
 
 export const renameSubjectBodySchema = z.object({
   name: z.string().min(1).max(120),
+  groupId: idSchema.nullable().optional(),
 });
+
+export const createGroupBodySchema = z.object({ name: z.string().min(1).max(120) });
+export type CreateGroupRequest = z.infer<typeof createGroupBodySchema>;
+
+export const renameGroupBodySchema = z.object({ name: z.string().min(1).max(120) });
+export type RenameGroupRequest = z.infer<typeof renameGroupBodySchema>;
+
+export const mergeBodySchema = z.object({ targetId: idSchema });
+export type MergeRequest = z.infer<typeof mergeBodySchema>;
+
+export const mergeResponseSchema = z.object({
+  moved: z.array(z.string()),
+  skipped: z.array(z.string()),
+});
+export type MergeResponse = z.infer<typeof mergeResponseSchema>;
+
+export const moveFileBodySchema = z.object({ targetSubjectId: idSchema });
+export type MoveFileRequest = z.infer<typeof moveFileBodySchema>;
 
 export const createJobBodySchema = z.object({ kind: jobKindSchema });
 

@@ -52,8 +52,8 @@ studi0/
    │     │  ├─ sse.ts            # EventSource helper (GET) + fetch-stream SSE reader (POST, for chat)
    │     │  └─ hooks.ts          # useSubjects / useSubject / useJobs / useLessons / useDue / useStats
    │     ├─ state/app.tsx        # AppContext: current subject, tab, open lesson
-   │     ├─ components/          # Badge, ProgressBar, ErrorBanner, EmptyState
-   │     ├─ subjects/            # Sidebar, SubjectPage(tabs), AddSubjectDialog, FileBrowser, UploadZone
+   │     ├─ components/          # Badge, ProgressBar, ErrorBanner, EmptyState, ContextMenu(portal, keyboard)
+   │     ├─ subjects/            # Sidebar(groups + menus), SubjectPage(tabs), AddSubjectDialog, FileBrowser(file menus), UploadZone
    │     ├─ graph/               # GraphView(iframe), JobPanel(progress/cancel/partial/stale), WikiEditor, ReportView
    │     ├─ lesson/              # LessonViewer(hot-reload), LessonsList, LessonChatPanel, Citation text renderer
    │     ├─ chat/                # ChatPanel(streaming log), SessionList, Composer

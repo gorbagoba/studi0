@@ -5,7 +5,10 @@ import type {
   ChatSession,
   CourseSetupBody,
   CreateSessionRequest,
+  FileRow,
+  Group,
   Health,
+  MergeResponse,
   OpencodeHealth,
   DueResponse,
   ErrorCode,
@@ -73,7 +76,11 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-function send<T>(method: 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
+function send<T>(
+  method: 'POST' | 'PATCH' | 'PUT' | 'DELETE',
+  path: string,
+  body?: unknown,
+): Promise<T> {
   return api<T>(path, {
     method,
     // bodyless POSTs must not carry a JSON content-type — Fastify rejects empty JSON bodies
@@ -91,6 +98,33 @@ export const createSubject = (body: { name: string; path?: string }): Promise<Su
 
 // unregister only — the subject's files on disk are never touched
 export const deleteSubject = (id: ID): Promise<void> => send<void>('DELETE', `/api/subjects/${id}`);
+
+// PATCH takes {name?, groupId?}; groupId null = ungroup. The 409 JOB_CONFLICT refusal surfaces via ApiError.
+export const renameSubject = (
+  id: ID,
+  patch: { name?: string; groupId?: string | null },
+): Promise<Subject> => send('PATCH', `/api/subjects/${id}`, patch);
+
+export const mergeSubject = (id: ID, targetId: ID): Promise<MergeResponse> =>
+  send('POST', `/api/subjects/${id}/merge-into`, { targetId });
+
+/** Irreversible — deletes the subject's folder on disk; refused with 409 JOB_CONFLICT while a job runs. */
+export const deleteSubjectFiles = (id: ID): Promise<{ ok: boolean }> =>
+  send('POST', `/api/subjects/${id}/delete-files`);
+
+// ---- groups ----
+
+export const getGroups = (): Promise<Group[]> => api<Group[]>('/api/groups');
+
+export const createGroup = (name: string): Promise<Group> =>
+  send('POST', '/api/groups', { name });
+
+export const renameGroup = (id: ID, name: string): Promise<Group> =>
+  send('PATCH', `/api/groups/${id}`, { name });
+
+/** Deleting never deletes subjects — they become ungrouped. */
+export const deleteGroup = (id: ID): Promise<{ ok: boolean }> =>
+  send('DELETE', `/api/groups/${id}`);
 
 export const getBuildLog = (id: ID): Promise<{ log: string | null }> =>
   api<{ log: string | null }>(`/api/subjects/${id}/graph/log`);
@@ -120,6 +154,17 @@ export const uploadFiles = (id: ID, form: FormData): Promise<UploadResult> =>
 /** Splits a big PDF into `<stem>_pNN.pdf` parts next to the original; the original is kept. */
 export const splitPdf = (id: ID, file: string): Promise<{ parts: string[] }> =>
   send<{ parts: string[] }>('POST', `/api/subjects/${id}/split-pdf`, { file });
+
+// TODO(shared): file rename/delete have no contract yet — RESTful shapes mirroring the group routes
+export const renameFile = (fileId: ID, name: string): Promise<FileRow> =>
+  send('PATCH', `/api/files/${fileId}`, { name });
+
+export const deleteFile = (fileId: ID): Promise<{ ok: boolean }> =>
+  send('DELETE', `/api/files/${fileId}`);
+
+/** 409 (NAME_TAKEN) when the target subject already has a file with this name. */
+export const moveFile = (fileId: ID, targetSubjectId: ID): Promise<FileRow> =>
+  send('POST', `/api/files/${fileId}/move`, { targetSubjectId });
 
 // ---- jobs ----
 

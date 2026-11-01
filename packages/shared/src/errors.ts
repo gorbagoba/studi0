@@ -3,6 +3,7 @@ import { z } from 'zod';
 export const errorCodes = [
   'VALIDATION',
   'SUBJECT_NOT_FOUND',
+  'GROUP_NOT_FOUND',
   'NAME_TAKEN',
   'PATH_NOT_FOUND',
   'FILE_NOT_FOUND',
