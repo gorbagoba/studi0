@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import type { ID, Job, JobStatus } from '@studi0/shared';
 import { openSubjectEvents } from '../api/sse';
 import { useSubject } from '../api/hooks';
@@ -9,15 +9,20 @@ import { EmptyState } from '../components/EmptyState';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { FileBrowser } from './FileBrowser';
 import { UploadZone } from './UploadZone';
-import { GraphView } from '../graph/GraphView';
-import { JobPanel, TERMINAL_JOB_STATUSES } from '../graph/JobPanel';
-import { ReportView } from '../graph/ReportView';
-import { WikiEditor } from '../graph/WikiEditor';
-import { LessonsList } from '../lesson/LessonsList';
-import { LessonViewer } from '../lesson/LessonViewer';
-import { ChatPanel } from '../chat/ChatPanel';
-import { PracticePage } from '../practice/PracticePage';
-import { CourseSetupForm } from './CourseSetupForm';
+import { TERMINAL_JOB_STATUSES } from '../graph/jobStatuses';
+
+// heavy tab panels load on demand — the tab bar must stay instant
+const GraphView = lazy(() => import('../graph/GraphView').then((m) => ({ default: m.GraphView })));
+const JobPanel = lazy(() => import('../graph/JobPanel').then((m) => ({ default: m.JobPanel })));
+const ReportView = lazy(() => import('../graph/ReportView').then((m) => ({ default: m.ReportView })));
+const WikiEditor = lazy(() => import('../graph/WikiEditor').then((m) => ({ default: m.WikiEditor })));
+const LessonsList = lazy(() => import('../lesson/LessonsList').then((m) => ({ default: m.LessonsList })));
+const LessonViewer = lazy(() => import('../lesson/LessonViewer').then((m) => ({ default: m.LessonViewer })));
+const ChatPanel = lazy(() => import('../chat/ChatPanel').then((m) => ({ default: m.ChatPanel })));
+const PracticePage = lazy(() => import('../practice/PracticePage').then((m) => ({ default: m.PracticePage })));
+const CourseSetupForm = lazy(() => import('./CourseSetupForm').then((m) => ({ default: m.CourseSetupForm })));
+
+const TAB_FALLBACK = <p className="muted">Loading…</p>;
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'material', label: 'Material' },
@@ -94,7 +99,11 @@ export function SubjectPage({ subjectId }: { subjectId: ID }) {
               </button>
             ))}
           </nav>
-          {tab === 'setup' && <CourseSetupForm subjectId={subjectId} />}
+          {tab === 'setup' && (
+            <Suspense fallback={TAB_FALLBACK}>
+              <CourseSetupForm subjectId={subjectId} />
+            </Suspense>
+          )}
           {tab === 'material' && (
             <div className="stack">
               <UploadZone
@@ -104,59 +113,74 @@ export function SubjectPage({ subjectId }: { subjectId: ID }) {
                   setFileV((x) => x + 1);
                 }}
               />
-              <FileBrowser subjectId={subjectId} version={fileV} onOpenLesson={openLesson} />
+              <FileBrowser
+                subjectId={subjectId}
+                version={fileV}
+                onOpenLesson={openLesson}
+                onFilesChanged={() => setFileV((x) => x + 1)}
+              />
             </div>
           )}
           {tab === 'graph' && (
-            <div className="stack">
-              <JobPanel
-                subjectId={subjectId}
-                job={job}
-                stale={s.stale}
-                onStarted={(j) => {
-                  // the POST response can resolve after SSE already advanced the job — keep the newer snapshot
-                  setLiveJob((cur) =>
-                    cur !== null &&
-                    cur.id === j.id &&
-                    JOB_STATUS_RANK[cur.status] > JOB_STATUS_RANK[j.status]
-                      ? cur
-                      : j,
-                  );
-                  subjectRef.current.reload();
-                }}
-              />
-              <GraphView subjectId={subjectId} version={v.graph} />
-              <ReportView subjectId={subjectId} version={v.graph} />
-              <WikiEditor subjectId={subjectId} />
-            </div>
+            <Suspense fallback={TAB_FALLBACK}>
+              <div className="stack">
+                <JobPanel
+                  subjectId={subjectId}
+                  job={job}
+                  stale={s.stale}
+                  onStarted={(j) => {
+                    // the POST response can resolve after SSE already advanced the job — keep the newer snapshot
+                    setLiveJob((cur) =>
+                      cur !== null &&
+                      cur.id === j.id &&
+                      JOB_STATUS_RANK[cur.status] > JOB_STATUS_RANK[j.status]
+                        ? cur
+                        : j,
+                    );
+                    subjectRef.current.reload();
+                  }}
+                />
+                <GraphView subjectId={subjectId} version={v.graph} />
+                <ReportView subjectId={subjectId} version={v.graph} />
+                <WikiEditor subjectId={subjectId} />
+              </div>
+            </Suspense>
           )}
           {tab === 'lessons' && (
-            <div className="lessons-pane">
-              <LessonsList subjectId={subjectId} version={v.lesson} />
-              {lessonPath !== null ? (
-                <LessonViewer
-                  subjectId={subjectId}
-                  path={lessonPath}
-                  version={v.lesson}
-                  onClosed={closeLesson}
-                  onLessonSaved={() => setV((x) => ({ ...x, lesson: x.lesson + 1 }))}
-                />
-              ) : (
-                <EmptyState
-                  title="Select a lesson"
-                  hint="Pick one from the list, or ask the teacher in Chat to write one."
-                />
-              )}
-            </div>
+            <Suspense fallback={TAB_FALLBACK}>
+              <div className="lessons-pane">
+                <LessonsList subjectId={subjectId} version={v.lesson} />
+                {lessonPath !== null ? (
+                  <LessonViewer
+                    subjectId={subjectId}
+                    path={lessonPath}
+                    version={v.lesson}
+                    onClosed={closeLesson}
+                    onLessonSaved={() => setV((x) => ({ ...x, lesson: x.lesson + 1 }))}
+                  />
+                ) : (
+                  <EmptyState
+                    title="Select a lesson"
+                    hint="Pick one from the list, or ask the teacher in Chat to write one."
+                  />
+                )}
+              </div>
+            </Suspense>
           )}
           {tab === 'chat' && (
-            <ChatPanel
-              subjectId={subjectId}
-              showSessions
-              onLessonSaved={() => setV((x) => ({ ...x, lesson: x.lesson + 1 }))}
-            />
+            <Suspense fallback={TAB_FALLBACK}>
+              <ChatPanel
+                subjectId={subjectId}
+                showSessions
+                onLessonSaved={() => setV((x) => ({ ...x, lesson: x.lesson + 1 }))}
+              />
+            </Suspense>
           )}
-          {tab === 'practice' && <PracticePage subjectId={subjectId} version={v.questions} />}
+          {tab === 'practice' && (
+            <Suspense fallback={TAB_FALLBACK}>
+              <PracticePage subjectId={subjectId} version={v.questions} />
+            </Suspense>
+          )}
         </>
       )}
     </div>

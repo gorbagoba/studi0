@@ -5,10 +5,15 @@ import { AppProvider } from '../state/app';
 import { SubjectPage } from './SubjectPage';
 
 // capture the SSE handlers so tests can push job events like the live stream does
-const sse = vi.hoisted(() => ({ handlers: null as { onJob: (job: Job) => void } | null }));
+type SseHandlers = {
+  onJob?: (job: Job) => void;
+  onLog?: (ev: { line: string; at: string }) => void;
+};
+const sse = vi.hoisted(() => ({ handlers: null as SseHandlers | null }));
 vi.mock('../api/sse', () => ({
-  openSubjectEvents: vi.fn((_id: string, handlers: { onJob: (job: Job) => void }) => {
-    sse.handlers = handlers;
+  // merge: the page and the (lazy) JobPanel log pane each open their own subscription
+  openSubjectEvents: vi.fn((_id: string, handlers: SseHandlers) => {
+    sse.handlers = { ...sse.handlers, ...handlers };
     return () => {};
   }),
 }));
@@ -66,6 +71,7 @@ describe('SubjectPage job state', () => {
         }
         if (url.endsWith('/cancel') && init?.method === 'POST')
           return Promise.resolve(jsonResponse(job('cancelling')));
+        if (url.endsWith('/graph/log')) return Promise.resolve(jsonResponse({ log: 'previous build tail\n' }));
         if (url.includes('/tree')) return Promise.resolve(jsonResponse({ dir: 'material', entries: [] }));
         if (url.endsWith('/graph/report'))
           return Promise.resolve(jsonResponse({ graphReport: null, verifyReport: null }));
@@ -103,7 +109,7 @@ describe('SubjectPage job state', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Build graph' }));
 
     // server emits queued→running before the 202 is sent, so SSE arrives first
-    act(() => sse.handlers!.onJob(job('running')));
+    act(() => sse.handlers!.onJob!(job('running')));
     expect(await screen.findByText(/Working…/)).toBeTruthy();
 
     await act(async () => resolveStart!(job('queued')));
@@ -121,12 +127,29 @@ describe('SubjectPage job state', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Graph' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Build graph' }));
 
-    act(() => sse.handlers!.onJob(job('running')));
+    act(() => sse.handlers!.onJob!(job('running')));
     expect(await screen.findByText(/Working…/)).toBeTruthy();
     await act(async () => resolveStart!(job('queued')));
     expect(screen.getByText(/Working…/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(await screen.findByText(/Cancelling…/)).toBeTruthy();
+  });
+
+  it('tails the build log over SSE on top of the history tail', async () => {
+    render(
+      <AppProvider>
+        <SubjectPage subjectId="s1" />
+      </AppProvider>,
+    );
+    expect(await screen.findByText('QA Subject')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Graph' }));
+    await screen.findByRole('button', { name: 'Build graph' });
+
+    // history tail fetched once, then live `log` events append below it
+    expect(await screen.findByText(/previous build tail/)).toBeTruthy();
+    act(() => sse.handlers!.onLog?.({ line: 'extracting chunk 3/7', at: NOW }));
+    expect(await screen.findByText(/extracting chunk 3\/7/)).toBeTruthy();
+    expect(screen.getByText(/previous build tail/)).toBeTruthy();
   });
 });

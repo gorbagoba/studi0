@@ -117,6 +117,10 @@ export const getTree = (id: ID, dir: TreeDir | null): Promise<TreeResponse> =>
 export const uploadFiles = (id: ID, form: FormData): Promise<UploadResult> =>
   api<UploadResult>(`/api/subjects/${id}/files`, { method: 'POST', body: form });
 
+/** Splits a big PDF into `<stem>_pNN.pdf` parts next to the original; the original is kept. */
+export const splitPdf = (id: ID, file: string): Promise<{ parts: string[] }> =>
+  send<{ parts: string[] }>('POST', `/api/subjects/${id}/split-pdf`, { file });
+
 // ---- jobs ----
 
 export const startJob = (id: ID, kind: JobKind): Promise<Job> =>

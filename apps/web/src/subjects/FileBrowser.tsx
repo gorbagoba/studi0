@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { ID, TreeDir } from '@studi0/shared';
+import { displayError, splitPdf } from '../api/client';
 import { useTree } from '../api/hooks';
 import { EmptyState } from '../components/EmptyState';
 import { ErrorBanner } from '../components/ErrorBanner';
@@ -11,13 +12,33 @@ export function FileBrowser({
   subjectId,
   version,
   onOpenLesson,
+  onFilesChanged,
 }: {
   subjectId: ID;
   version: number;
   onOpenLesson: (path: string) => void;
+  onFilesChanged: () => void;
 }) {
   const [dir, setDir] = useState<TreeDir>('material');
+  const [splitting, setSplitting] = useState(false);
+  const [splitParts, setSplitParts] = useState<string[] | null>(null);
+  const [splitError, setSplitError] = useState<string | null>(null);
   const tree = useTree(subjectId, dir, version);
+
+  async function onSplit(path: string): Promise<void> {
+    if (!window.confirm(`Split "${path}" into per-lecture PDFs? The original file is kept.`)) return;
+    setSplitting(true);
+    setSplitError(null);
+    try {
+      const { parts } = await splitPdf(subjectId, path);
+      setSplitParts(parts);
+      onFilesChanged();
+    } catch (e) {
+      setSplitError(displayError(e));
+    } finally {
+      setSplitting(false);
+    }
+  }
 
   return (
     <section aria-labelledby="files-title" className="panel">
@@ -36,6 +57,13 @@ export function FileBrowser({
       </div>
       {tree.loading && <p className="muted">Loading…</p>}
       {tree.error !== null && <ErrorBanner message={tree.error} />}
+      {splitError !== null && <ErrorBanner message={splitError} />}
+      {splitParts !== null && (
+        <p className="muted" role="status">
+          Split into {splitParts.length} part{splitParts.length === 1 ? '' : 's'}:{' '}
+          <code>{splitParts.join(', ')}</code>
+        </p>
+      )}
       {tree.data !== null &&
         (tree.data.entries.length === 0 ? (
           <EmptyState title={`Nothing in ${dir}/ yet`} />
@@ -66,6 +94,15 @@ export function FileBrowser({
                           Open
                         </button>
                       )}
+                    {e.ext.replace(/^\./, '').toLowerCase() === 'pdf' && (
+                      <button
+                        className="btn btn-small"
+                        disabled={splitting}
+                        onClick={() => void onSplit(e.path)}
+                      >
+                        Split into parts
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

@@ -11,10 +11,17 @@ import { toApiError } from './client';
 
 // ---- subject events (GET, EventSource) ----
 
+/** Runner build-log line pushed on the subject event stream (`log` event). */
+export interface SubjectLogEvent {
+  line: string;
+  at: string;
+}
+
 export interface SubjectEventHandlers {
   onJob?: (job: Job) => void;
   onLesson?: (lesson: Lesson) => void;
   onQuestions?: (payload: SubjectQuestionsEvent) => void;
+  onLog?: (event: SubjectLogEvent) => void;
 }
 
 /** Opens the subject SSE stream; returns a cleanup that closes it. */
@@ -26,6 +33,9 @@ export function openSubjectEvents(subjectId: ID, handlers: SubjectEventHandlers)
   );
   es.addEventListener('questions', (e) =>
     handlers.onQuestions?.(JSON.parse((e as MessageEvent).data) as SubjectQuestionsEvent),
+  );
+  es.addEventListener('log', (e) =>
+    handlers.onLog?.(JSON.parse((e as MessageEvent).data) as SubjectLogEvent),
   );
   return () => es.close();
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useSubjects } from '../api/hooks';
-import { deleteSubject, shutdownServer } from '../api/client';
+import { deleteSubject, getHealth, shutdownServer } from '../api/client';
 import { useApp } from '../state/app';
 import { AddSubjectDialog } from './AddSubjectDialog';
 import { Badge } from '../components/Badge';
@@ -20,10 +20,21 @@ export function Sidebar() {
     subjects.reload();
   }
 
-  function onShutdown() {
+  async function onShutdown() {
+    let summary: string;
+    try {
+      const h = await getHealth();
+      const jobs =
+        h.jobs.length === 0
+          ? 'none'
+          : h.jobs.map((j) => `${j.subject} — ${j.kind}, ${j.done}/${j.total}`).join('\n');
+      summary = `Active jobs: ${jobs}\nTeacher: ${h.opencode.healthy ? 'healthy' : 'offline'}`;
+    } catch {
+      summary = 'Could not check running jobs (server unreachable).';
+    }
     if (
       !window.confirm(
-        'Shut down studi0? Running graph builds are cancelled, the teacher goes offline, and you will need to restart with `pnpm dev`.',
+        `Shut down studi0?\n\n${summary}\n\nRunning graph builds are cancelled, the teacher goes offline, and you will need to restart with \`pnpm dev\`.`,
       )
     ) {
       return;
@@ -80,7 +91,8 @@ export function Sidebar() {
       </button>
       {shuttingDown ? (
         <p className="muted shutdown-note" role="status">
-          Server shut down. Close this tab — restart with <code>pnpm dev</code>.
+          Server shut down. Close this tab — restart with <code>pnpm dev</code>.{' '}
+          <CopyRestartCommand />
         </p>
       ) : (
         <button type="button" className="btn btn-small shutdown-btn" onClick={onShutdown}>
@@ -96,5 +108,22 @@ export function Sidebar() {
         }}
       />
     </aside>
+  );
+}
+
+function CopyRestartCommand() {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      className="btn btn-small"
+      onClick={() => {
+        void navigator.clipboard.writeText('pnpm dev');
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1500);
+      }}
+    >
+      {copied ? 'Copied' : 'Copy restart command'}
+    </button>
   );
 }

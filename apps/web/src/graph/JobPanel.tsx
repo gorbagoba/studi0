@@ -1,15 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ID, Job, JobKind, JobStatus } from '@studi0/shared';
+import type { ID, Job, JobKind } from '@studi0/shared';
 import { cancelJob, displayError, getBuildLog, startJob } from '../api/client';
+import { openSubjectEvents } from '../api/sse';
+import { TERMINAL_JOB_STATUSES } from './jobStatuses';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { ProgressBar } from '../components/ProgressBar';
-
-export const TERMINAL_JOB_STATUSES: ReadonlySet<JobStatus> = new Set<JobStatus>([
-  'complete',
-  'partial',
-  'failed',
-  'cancelled',
-]);
 
 export function JobPanel({
   subjectId,
@@ -82,31 +77,30 @@ export function JobPanel({
   );
 }
 
-/** Live-tailing view of graphify-out/build.log — also shows the previous build's log after a crash. */
+/** Live-tailing view of graphify-out/build.log via SSE `log` events, with one history tail fetch. */
 function BuildLog({ subjectId, active, jobId }: { subjectId: ID; active: boolean; jobId: string | null }) {
   const [log, setLog] = useState<string | null>(null);
   const preRef = useRef<HTMLPreElement>(null);
 
   useEffect(() => {
     let stopped = false;
-    const tick = async () => {
-      try {
-        const r = await getBuildLog(subjectId);
+    // one tail fetch for pre-connection history; refetched per job — build.log starts over
+    void getBuildLog(subjectId)
+      .then((r) => {
         if (!stopped) setLog(r.log);
-      } catch {
-        // the log pane is best-effort — never surface fetch errors here
-      }
-    };
-    void tick();
-    if (!active) return () => {
-      stopped = true;
-    };
-    const iv = setInterval(() => void tick(), 2500);
+      })
+      .catch(() => undefined); // the log pane is best-effort — never surface fetch errors here
     return () => {
       stopped = true;
-      clearInterval(iv);
     };
-  }, [subjectId, active, jobId]);
+  }, [subjectId, jobId]);
+
+  useEffect(() => {
+    const close = openSubjectEvents(subjectId, {
+      onLog: (ev) => setLog((cur) => (cur ?? '') + ev.line + '\n'),
+    });
+    return close;
+  }, [subjectId]);
 
   useEffect(() => {
     if (preRef.current) preRef.current.scrollTop = preRef.current.scrollHeight;
