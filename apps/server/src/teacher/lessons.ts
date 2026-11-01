@@ -30,7 +30,15 @@ export function parseLessonMarker(html: string): LessonMarker | null {
 export function extractTitle(html: string, fallback: string): string {
   const t = html.match(/<title>([^<]*)<\/title>/i)?.[1] ?? html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1];
   if (!t) return fallback;
-  return t.replace(/<[^>]+>/g, '').trim() || fallback;
+  const text = t.replace(/<[^>]+>/g, '').trim();
+  // titles carry HTML entities (&amp; in "Heaps &amp; Priority Queues") — decode the common set
+  const decoded = text
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+  return decoded || fallback;
 }
 
 /** Snapshot of lessons/ as relPath → mtime ISO. */
