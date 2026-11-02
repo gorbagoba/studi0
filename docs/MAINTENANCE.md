@@ -56,5 +56,6 @@ body. If everything was already clean, no commit.
 
 | Date | Findings removed |
 |---|---|
+| 2026-11-02 (sweep 3, post UI/UX pass) | knip ignoreBinaries taskkill+lsof (now resolved from code literals), TODO→`shortcut:` in web client.ts, stale qa-tmp/job.json; breadth: secrets 0, dep vulns 0, empty catches 0 |
 | 2026-11-01 (sweep 2) | stale TODO(server) in FileBrowser (row ids landed), SubjectLogEvent export keyword, knip ignores for .d.mts decls + POSIX binaries; security breadth audit: 0 real findings |
 | 2026-11-01 | 15 (4 dead symbols, 10 export keywords, 1 duplicate schema alias) — knip baseline created |

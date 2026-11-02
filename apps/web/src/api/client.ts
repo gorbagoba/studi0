@@ -155,7 +155,7 @@ export const uploadFiles = (id: ID, form: FormData): Promise<UploadResult> =>
 export const splitPdf = (id: ID, file: string): Promise<{ parts: string[] }> =>
   send<{ parts: string[] }>('POST', `/api/subjects/${id}/split-pdf`, { file });
 
-// TODO(shared): file rename/delete have no contract yet — RESTful shapes mirroring the group routes
+// shortcut: rename/delete reuse informal RESTful shapes, no shared contract — formalize when the file API gets versioned
 export const renameFile = (fileId: ID, name: string): Promise<FileRow> =>
   send('PATCH', `/api/files/${fileId}`, { name });
 

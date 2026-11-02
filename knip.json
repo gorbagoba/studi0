@@ -1,5 +1,5 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignoreBinaries": ["netstat", "taskkill", "lsof"],
+  "ignoreBinaries": ["netstat"],
   "ignoreFiles": ["scripts/**/*.d.mts"]
 }
