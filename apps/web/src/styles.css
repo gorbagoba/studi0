@@ -1337,6 +1337,63 @@ dl.diag-list dd.diag-status {
   width: 100%;
 }
 
+/* text-size + reading-mode controls in the lesson head */
+.lesson-fs-ctl {
+  display: inline-flex;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+
+/* reading mode: lesson chrome collapses, content fills the viewport */
+.lesson-viewer.reading {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: var(--bg);
+  padding: 0.75rem;
+}
+
+.lesson-viewer.reading .lesson-head,
+.lesson-viewer.reading .lesson-pager {
+  display: none;
+}
+
+.lesson-viewer.reading .lesson-frame {
+  min-height: 0;
+}
+
+.lesson-viewer.reading .lesson-chat.chat-hidden {
+  display: none;
+}
+
+.lesson-viewer.reading .lesson-chat.chat-overlay {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  width: min(24rem, 90vw);
+  max-height: 70vh;
+  overflow: auto;
+  z-index: 60;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.75rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.reading-bar {
+  position: fixed;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 60;
+  display: flex;
+  gap: 0.35rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.3rem 0.4rem;
+}
+
 .emoji-overlay {
   position: fixed;
   inset: 0;

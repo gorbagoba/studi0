@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LessonViewer } from './LessonViewer';
 import { AppProvider } from '../state/app';
@@ -16,6 +16,10 @@ vi.mock('../api/client', async () => {
     ...actual,
     getLessons: vi.fn(async () => lessons),
     getLessonContent: vi.fn(async () => ({ path: 'lessons/a.html', title: 'Alpha', html: '<p>x</p>', updatedAt: NOW })),
+    getSessions: vi.fn(async () => []),
+    createSession: vi.fn(async () => ({ id: 'cs1', subjectId: 's1', lessonId: null, active: true, messageCount: 0, summaryPath: null, createdAt: NOW, lastMessageAt: null, title: null })),
+    getMessages: vi.fn(async () => []),
+    renameChatSession: vi.fn(async () => undefined),
   };
 });
 
@@ -46,5 +50,19 @@ describe('LessonViewer', () => {
     renderViewer('lessons/a.html');
     const frame = await waitFor(() => screen.getByTitle('Lesson content: Alpha'));
     expect(frame.getAttribute('srcdoc')).toContain('column-count: 2');
+  });
+
+  it('offers text-size controls and a reading mode with Escape exit', async () => {
+    renderViewer('lessons/a.html');
+    await waitFor(() => expect(screen.getByTitle('Lesson content: Alpha')).toBeTruthy());
+    expect(screen.getByLabelText('Smaller text').hasAttribute('disabled')).toBe(false);
+    const read = screen.getByLabelText('Reading mode');
+    expect(read.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(read);
+    expect(screen.getByLabelText('Exit reading mode')).toBeTruthy();
+    expect(screen.getByLabelText('Toggle chat panel')).toBeTruthy();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByLabelText('Exit reading mode')).toBeNull());
+    expect(screen.getByLabelText('Reading mode').getAttribute('aria-pressed')).toBe('false');
   });
 });
