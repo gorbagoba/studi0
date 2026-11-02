@@ -83,41 +83,10 @@ export function LessonViewer({
   const idx = lessons.data?.findIndex((l) => l.path === path) ?? -1;
   const prev = idx > 0 ? lessons.data?.[idx - 1] : undefined;
   const next = lessons.data !== null && idx >= 0 && idx < lessons.data.length - 1 ? lessons.data[idx + 1] : undefined;
-  const frameRef = useRef<HTMLIFrameElement | null>(null);
-  const [fs, setFs] = useState<number>(() => {
-    const v = Number(localStorage.getItem('studi0-lesson-fs'));
-    return v >= 16 && v <= 22 ? v : 17;
-  });
-  const [full, setFull] = useState(false);
-  const [peek, setPeek] = useState(false);
-
-  const changeFs = (d: number): void => {
-    const v = Math.min(22, Math.max(16, fs + d));
-    setFs(v);
-    localStorage.setItem('studi0-lesson-fs', String(v));
-    frameRef.current?.contentWindow?.postMessage({ type: 'spread-fs', fs: v }, '*');
-  };
-
-  // Re-push the text size whenever the (opaque-origin) document reloads.
-  const pushFs = (): void => {
-    frameRef.current?.contentWindow?.postMessage({ type: 'spread-fs', fs }, '*');
-  };
-
-  useEffect(() => {
-    if (!full) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        setFull(false);
-        setPeek(false);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [full]);
 
   return (
     <section
-      className={`lesson-viewer${full ? ' reading' : ''}`}
+      className="lesson-viewer"
       aria-label={content !== null ? `Lesson: ${content.title}` : 'Lesson viewer'}
     >
       <div className="lesson-main">
@@ -143,23 +112,14 @@ export function LessonViewer({
             </select>
           </div>
           {content !== null && <span className="muted">updated {formatDateTime(content.updatedAt)}</span>}
-          {!full && (
-            <span className="lesson-fs-ctl">
-              <button type="button" className="btn btn-small" aria-label="Smaller text" onClick={() => changeFs(-1)} disabled={fs <= 16}>A−</button>
-              <button type="button" className="btn btn-small" aria-label="Larger text" onClick={() => changeFs(1)} disabled={fs >= 22}>A+</button>
-              <button type="button" className="btn btn-small" aria-label="Reading mode" aria-pressed={full} onClick={() => setFull(true)}>Read</button>
-            </span>
-          )}
         </div>
         {error !== null && <ErrorBanner message={error} />}
         {content !== null ? (
           <iframe
-            ref={frameRef}
             title={`Lesson content: ${content.title}`}
             className="lesson-frame"
             sandbox="allow-scripts"
             srcDoc={toSpread(content.html)}
-            onLoad={pushFs}
           />
         ) : (
           error === null && <p className="muted">Loading lesson…</p>
@@ -188,9 +148,7 @@ export function LessonViewer({
           </button>
         </div>
       </div>
-      <aside
-        className={`lesson-chat${full ? (peek ? ' chat-overlay' : ' chat-hidden') : ''}`}
-      >
+      <aside className="lesson-chat">
         {lessons.loading ? (
           <p className="muted">Loading…</p>
         ) : lesson !== null ? (
@@ -202,26 +160,6 @@ export function LessonViewer({
           </p>
         )}
       </aside>
-      {full && (
-        <div className="reading-bar" role="toolbar" aria-label="Reading controls">
-          <button type="button" className="btn btn-small" aria-label="Smaller text" onClick={() => changeFs(-1)} disabled={fs <= 16}>A−</button>
-          <button type="button" className="btn btn-small" aria-label="Larger text" onClick={() => changeFs(1)} disabled={fs >= 22}>A+</button>
-          <button type="button" className="btn btn-small" aria-label="Toggle chat panel" aria-pressed={peek} onClick={() => setPeek((v) => !v)}>
-            {peek ? 'Hide chat' : 'Chat'}
-          </button>
-          <button
-            type="button"
-            className="btn btn-small"
-            aria-label="Exit reading mode"
-            onClick={() => {
-              setFull(false);
-              setPeek(false);
-            }}
-          >
-            Exit
-          </button>
-        </div>
-      )}
     </section>
   );
 }
