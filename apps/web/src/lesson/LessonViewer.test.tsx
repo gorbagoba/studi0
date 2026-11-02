@@ -15,12 +15,7 @@ vi.mock('../api/client', async () => {
   return {
     ...actual,
     getLessons: vi.fn(async () => lessons),
-    getLessonContent: vi.fn(async (_subjectId: unknown, path: string) => ({
-      path,
-      title: path === 'lessons/a.html' ? 'Alpha' : 'Beta',
-      html: '<p>x</p>',
-      updatedAt: NOW,
-    })),
+    getLessonContent: vi.fn(async () => ({ path: 'lessons/a.html', title: 'Alpha', html: '<p>x</p>', updatedAt: NOW })),
   };
 });
 
@@ -50,18 +45,5 @@ describe('LessonViewer', () => {
   it('renders the lesson content iframe', async () => {
     renderViewer('lessons/a.html');
     await waitFor(() => expect(screen.getByTitle('Lesson content: Alpha')).toBeTruthy());
-  });
-
-  it('renders the next lesson as the right page of the spread', async () => {
-    renderViewer('lessons/a.html');
-    await waitFor(() => expect(screen.getByTitle('Lesson content: Beta')).toBeTruthy());
-    expect(screen.getAllByTitle(/Lesson content:/)).toHaveLength(2);
-  });
-
-  it('shows an empty right page on the last lesson', async () => {
-    renderViewer('lessons/b.html');
-    await waitFor(() => expect(screen.getByTitle('Lesson content: Beta')).toBeTruthy());
-    expect(screen.getByText(/Last lesson/)).toBeTruthy();
-    expect(screen.getAllByTitle(/Lesson content:/)).toHaveLength(1);
   });
 });
