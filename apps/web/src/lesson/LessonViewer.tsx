@@ -9,28 +9,18 @@ import { ChatPanel } from '../chat/ChatPanel';
 
 const POLL_MS = 2500;
 
-export function LessonViewer({
-  subjectId,
-  path,
-  version,
-  onClosed,
-  onLessonSaved,
-}: {
-  subjectId: ID;
-  path: string;
-  version: number;
-  onClosed: () => void;
-  onLessonSaved?: () => void;
-}) {
-  const lessons = useLessons(subjectId, version);
-  const { openLesson } = useApp();
-  const lesson = lessons.data?.find((l) => l.path === path) ?? null;
+/** Polls one lesson's content for hot-reload; pass null to idle (no lesson). */
+function useLessonContent(
+  subjectId: ID,
+  path: string | null,
+): { content: LessonContent | null; error: string | null } {
   const [content, setContent] = useState<LessonContent | null>(null);
   const [error, setError] = useState<string | null>(null);
   const seen = useRef<string | null>(null);
 
   // Hot-reload: poll while open, skip re-render while updatedAt is unchanged, visibility-gated.
   useEffect(() => {
+    if (path === null) return;
     seen.current = null;
     setContent(null);
     setError(null);
@@ -60,6 +50,30 @@ export function LessonViewer({
       if (timer !== undefined) clearTimeout(timer);
     };
   }, [subjectId, path]);
+  return { content, error };
+}
+
+export function LessonViewer({
+  subjectId,
+  path,
+  version,
+  onClosed,
+  onLessonSaved,
+}: {
+  subjectId: ID;
+  path: string;
+  version: number;
+  onClosed: () => void;
+  onLessonSaved?: () => void;
+}) {
+  const lessons = useLessons(subjectId, version);
+  const { openLesson } = useApp();
+  const lesson = lessons.data?.find((l) => l.path === path) ?? null;
+  const idx = lessons.data?.findIndex((l) => l.path === path) ?? -1;
+  const prev = idx > 0 ? lessons.data?.[idx - 1] : undefined;
+  const next = lessons.data !== null && idx >= 0 && idx < lessons.data.length - 1 ? lessons.data[idx + 1] : undefined;
+  const { content, error } = useLessonContent(subjectId, path);
+  const { content: nextContent, error: nextError } = useLessonContent(subjectId, next?.path ?? null);
 
   // Arrow-key lesson navigation (skips while typing in a form field)
   useEffect(() => {
@@ -78,10 +92,6 @@ export function LessonViewer({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [lessons.data, path, openLesson]);
-
-  const idx = lessons.data?.findIndex((l) => l.path === path) ?? -1;
-  const prev = idx > 0 ? lessons.data?.[idx - 1] : undefined;
-  const next = lessons.data !== null && idx >= 0 && idx < lessons.data.length - 1 ? lessons.data[idx + 1] : undefined;
 
   return (
     <section
@@ -114,12 +124,28 @@ export function LessonViewer({
         </div>
         {error !== null && <ErrorBanner message={error} />}
         {content !== null ? (
-          <iframe
-            title={`Lesson content: ${content.title}`}
-            className="lesson-frame"
-            sandbox="allow-scripts"
-            srcDoc={content.html}
-          />
+          <div className="lesson-spread">
+            <iframe
+              title={`Lesson content: ${content.title}`}
+              className="lesson-frame"
+              sandbox="allow-scripts"
+              srcDoc={content.html}
+            />
+            {nextContent !== null ? (
+              <iframe
+                title={`Lesson content: ${nextContent.title}`}
+                className="lesson-frame"
+                sandbox="allow-scripts"
+                srcDoc={nextContent.html}
+              />
+            ) : next !== undefined ? (
+              <p className="muted lesson-page-note">{nextError ?? 'Loading next lesson...'}</p>
+            ) : (
+              <div className="lesson-frame lesson-page-end">
+                <p className="muted">Last lesson — the next one appears here once generated.</p>
+              </div>
+            )}
+          </div>
         ) : (
           error === null && <p className="muted">Loading lesson…</p>
         )}
