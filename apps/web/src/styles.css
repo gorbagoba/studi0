@@ -1380,6 +1380,13 @@ dl.diag-list dd.diag-status {
   min-height: calc(100vh - 9.5rem);
 }
 
+/* lesson view: the viewer already fills the pane — keep the composer near the
+   lesson bottom and cap the chat so long threads scroll internally */
+.lesson-viewer .chat {
+  min-height: 0;
+  max-height: 32rem;
+}
+
 .chat-head {
   display: flex;
   align-items: center;
