@@ -1276,7 +1276,7 @@ dl.diag-list dd.diag-status {
 .lesson-frame {
   width: 100%;
   flex: 1;
-  min-height: 60vh;
+  min-height: 85vh;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
