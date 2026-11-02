@@ -6,7 +6,6 @@ import { useApp } from '../state/app';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { formatDateTime } from '../lib/format';
 import { ChatPanel } from '../chat/ChatPanel';
-import { toSpread } from './spread';
 
 const POLL_MS = 2500;
 
@@ -119,7 +118,7 @@ export function LessonViewer({
             title={`Lesson content: ${content.title}`}
             className="lesson-frame"
             sandbox="allow-scripts"
-            srcDoc={toSpread(content.html)}
+            srcDoc={content.html}
           />
         ) : (
           error === null && <p className="muted">Loading lesson…</p>
