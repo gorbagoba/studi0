@@ -44,6 +44,7 @@ describe('LessonViewer', () => {
 
   it('renders the lesson content iframe', async () => {
     renderViewer('lessons/a.html');
-    await waitFor(() => expect(screen.getByTitle('Lesson content: Alpha')).toBeTruthy());
+    const frame = await waitFor(() => screen.getByTitle('Lesson content: Alpha'));
+    expect(frame.getAttribute('srcdoc')).toContain('column-count: 2');
   });
 });
