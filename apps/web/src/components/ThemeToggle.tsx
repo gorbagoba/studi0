@@ -8,20 +8,22 @@ function initial(): Theme {
   return 'dark'; // Blackboard identity: the board is the default until toggled
 }
 
-export function ThemeToggle() {
+export function ThemeToggle({ iconOnly = false }: { iconOnly?: boolean }) {
   const [theme, setTheme] = useState<Theme>(initial);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem('studi0-theme', theme);
   }, [theme]);
+  const glyph = theme === 'dark' ? '☀' : '☾';
   return (
     <button
       type="button"
-      className="btn btn-small theme-toggle"
+      className={iconOnly ? 'icon-btn' : 'btn btn-small'}
       aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+      title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
       onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
     >
-      {theme === 'dark' ? '☀ Light' : '☾ Dark'}
+      {iconOnly ? glyph : `${glyph} ${theme === 'dark' ? 'Light' : 'Dark'}`}
     </button>
   );
 }

@@ -3,6 +3,9 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ContextMenu } from './ContextMenu';
 import type { MenuState } from './ContextMenu';
+import { installDialogPolyfill } from '../testing/dialogPolyfill';
+
+installDialogPolyfill();
 
 function Harness({ items }: { items: MenuState['items'] }) {
   const [menu, setMenu] = useState<MenuState | null>({ x: 10, y: 10, items });
@@ -48,18 +51,32 @@ describe('ContextMenu', () => {
     expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'First' }));
   });
 
-  it('asks for confirmation before running a confirm item, and closes even when declined', () => {
+  it('asks for confirmation in a dialog before running a confirm item, and closes even when declined', () => {
     const onSelect = vi.fn();
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
     render(
       <Harness
         items={[{ label: 'Delete files from disk', danger: true, confirm: 'sure?', onSelect }]}
       />,
     );
     fireEvent.click(screen.getByRole('menuitem', { name: 'Delete files from disk' }));
-    expect(confirmSpy).toHaveBeenCalledWith('sure?');
-    expect(onSelect).not.toHaveBeenCalled();
+    // the menu closes and the in-app confirm dialog takes over
     expect(screen.queryByRole('menu')).toBeNull();
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.textContent).toContain('sure?');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    // confirming runs the action
+    render(
+      <Harness
+        items={[{ label: 'Delete files from disk', danger: true, confirm: 'sure?', onSelect }]}
+      />,
+    );
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete files from disk' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete files from disk' }));
+    expect(onSelect).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('opens a submenu and picks a target from it', () => {

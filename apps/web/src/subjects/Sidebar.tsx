@@ -16,10 +16,13 @@ import type { Group, Subject } from '@studi0/shared';
 import { useApp } from '../state/app';
 import { AddSubjectDialog } from './AddSubjectDialog';
 import { Badge } from '../components/Badge';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { ContextMenu } from '../components/ContextMenu';
 import type { MenuItem, MenuState } from '../components/ContextMenu';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { EmojiPickerModal } from './EmojiPickerModal';
+import { PromptDialog } from '../components/PromptDialog';
+import { ThemeToggle } from '../components/ThemeToggle';
 
 const COLLAPSE_KEY = 'studi0.collapsed-groups';
 const SIDEBAR_KEY = 'studi0.sidebar-collapsed';
@@ -36,6 +39,32 @@ function loadCollapsed(): Set<string> {
   }
 }
 
+function GearIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M19.14,12.94a7.07,7.07 0 0,0 .06,-.94 7.07,7.07 0 0,0 -.06,-.94l2.03,-1.58a.5,.5 0 0,0 .12,-.64l-1.92,-3.32a.5,.5 0 0,0 -.61,-.22l-2.39,.96a7.3,7.3 0 0,0 -1.62,-.94l-.36,-2.54a.5,.5 0 0,0 -.5,-.42h-3.84a.5,.5 0 0,0 -.5,.42l-.36,2.54a7.3,7.3 0 0,0 -1.62,.94l-2.39,-.96a.5,.5 0 0,0 -.61,.22L2.74,8.84a.5,.5 0 0,0 .12,.64l2.03,1.58a7.07,7.07 0 0,0 -.06,.94 7.07,7.07 0 0,0 .06,.94L2.86,14.5a.5,.5 0 0,0 -.12,.64l1.92,3.32c.14,.24 .44,.34 .61,.22l2.39,-.96c.5,.4 1.04,.72 1.62,.94l.36,2.54a.5,.5 0 0,0 .5,.42h3.84a.5,.5 0 0,0 .5,-.42l.36,-2.54a7.3,7.3 0 0,0 1.62,-.94l2.39,.96c.24,.1 .55,0 .61,-.22l1.92,-3.32a.5,.5 0 0,0 -.12,-.64ZM12,15.5A3.5,3.5 0 1,1 12,8.5a3.5,3.5 0 0,1 0,7Z"
+      />
+    </svg>
+  );
+}
+
+function PowerIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+      <path fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" d="M12 3v8" />
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        d="M6.3 6.5a8 8 0 1 0 11.4 0"
+      />
+    </svg>
+  );
+}
+
 export function Sidebar() {
   const { subjectId, selectSubject, setSettingsOpen } = useApp();
   const subjects = useSubjects();
@@ -50,6 +79,11 @@ export function Sidebar() {
   const [dragOverGroup, setDragOverGroup] = useState<string | null>(null);
   const [iconPickerFor, setIconPickerFor] = useState<Subject | null>(null);
   const [rail, setRail] = useState(() => localStorage.getItem(SIDEBAR_KEY) === '1');
+  // pending in-app dialog flows (replace window.prompt / window.confirm)
+  const [renameTarget, setRenameTarget] = useState<Subject | null>(null);
+  const [renameGroupTarget, setRenameGroupTarget] = useState<Group | null>(null);
+  const [deleteFilesTarget, setDeleteFilesTarget] = useState<Subject | null>(null);
+  const [shutdownSummary, setShutdownSummary] = useState<string | null>(null);
 
   function setRailPersist(v: boolean): void {
     setRail(v);
@@ -90,23 +124,14 @@ export function Sidebar() {
     }
   }
 
-  async function onRemove(s: Subject) {
-    // unregister only — server never touches the files on disk
-    if (!window.confirm(`Remove "${s.name}" from studi0? Your files on disk are NOT deleted.`))
-      return;
-    await deleteSubject(s.id);
-    if (s.id === subjectId) selectSubject(null);
-    subjects.reload();
+  /** confirmation already happened in the menu's dialog — unregister only, files stay on disk */
+  async function doRemove(s: Subject) {
+    if (await run(() => deleteSubject(s.id))) {
+      if (s.id === subjectId) selectSubject(null);
+    }
   }
 
-  async function onRenameSubject(s: Subject) {
-    const name = window.prompt(`Rename subject "${s.name}"`, s.name);
-    if (name === null || name.trim() === '' || name.trim() === s.name) return;
-    await run(() => renameSubject(s.id, { name: name.trim() }));
-  }
-
-  async function onMerge(s: Subject, target: Subject) {
-    if (!window.confirm(`Merge "${s.name}" into "${target.name}"? Its files move over.`)) return;
+  async function doMerge(s: Subject, target: Subject) {
     try {
       setActionError(null);
       const r = await mergeSubject(s.id, target.id);
@@ -115,20 +140,6 @@ export function Sidebar() {
       setActionError(displayError(e));
     }
     reload();
-  }
-
-  async function onDeleteFiles(s: Subject) {
-    const typed = window.prompt(
-      `Delete ALL files of "${s.name}" from disk? This is irreversible.\nType the subject name to confirm:`,
-    );
-    if (typed !== s.name) return;
-    await run(() => deleteSubjectFiles(s.id, { confirm: typed }));
-  }
-
-  async function onRenameGroup(g: Group) {
-    const name = window.prompt(`Rename group "${g.name}"`, g.name);
-    if (name === null || name.trim() === '' || name.trim() === g.name) return;
-    await run(() => renameGroup(g.id, name.trim()));
   }
 
   async function onCreateGroup() {
@@ -166,7 +177,7 @@ export function Sidebar() {
   function subjectMenuItems(s: Subject): MenuItem[] {
     return [
       { label: 'Open', onSelect: () => selectSubject(s.id) },
-      { label: 'Rename', onSelect: () => void onRenameSubject(s) },
+      { label: 'Rename', onSelect: () => setRenameTarget(s) },
       {
         label: 'Set icon…',
         onSelect: () => setIconPickerFor(s),
@@ -189,17 +200,21 @@ export function Sidebar() {
         label: 'Merge into subject…',
         submenu: all
           .filter((o) => o.id !== s.id)
-          .map((o) => ({ label: o.name, onSelect: () => void onMerge(s, o) })),
+          .map((o) => ({
+            label: o.name,
+            confirm: `Merge "${s.name}" into "${o.name}"? Its files move over.`,
+            onSelect: () => void doMerge(s, o),
+          })),
       },
       {
         label: 'Remove from studi0',
         confirm: `Remove "${s.name}" from studi0? Your files on disk are NOT deleted.`,
-        onSelect: () => void onRemove(s),
+        onSelect: () => void doRemove(s),
       },
       {
         label: 'Delete files from disk',
         danger: true,
-        onSelect: () => void onDeleteFiles(s),
+        onSelect: () => setDeleteFilesTarget(s),
       },
     ];
   }
@@ -207,7 +222,7 @@ export function Sidebar() {
   function groupMenuItems(g: Group): MenuItem[] {
     const count = inGroup(g.id).length;
     return [
-      { label: 'Rename', onSelect: () => void onRenameGroup(g) },
+      { label: 'Rename', onSelect: () => setRenameGroupTarget(g) },
       {
         label: 'Delete',
         danger: true,
@@ -240,7 +255,8 @@ export function Sidebar() {
     );
   }
 
-  async function onShutdown() {
+  /** gathers the shutdown summary, then asks for confirmation in an in-app dialog */
+  async function askShutdown() {
     let summary: string;
     try {
       const h = await getHealth();
@@ -248,19 +264,12 @@ export function Sidebar() {
         h.jobs.length === 0
           ? 'none'
           : h.jobs.map((j) => `${j.subject} — ${j.kind}, ${j.done}/${j.total}`).join('\n');
-      summary = `Active jobs: ${jobs}\nTeacher: ${h.opencode.healthy ? 'healthy' : 'offline'}`;
+      summary = `Active jobs: ${jobs}\nTeacher: ${h.opencode.healthy ? 'healthy' : 'offline'}\n\nRunning graph builds are cancelled, the teacher goes offline, and you will need to restart with \`pnpm dev\`.`;
     } catch {
-      summary = 'Could not check running jobs (server unreachable).';
+      summary =
+        'Could not check running jobs (server unreachable).\n\nRunning graph builds are cancelled, the teacher goes offline, and you will need to restart with `pnpm dev`.';
     }
-    if (
-      !window.confirm(
-        `Shut down studi0?\n\n${summary}\n\nRunning graph builds are cancelled, the teacher goes offline, and you will need to restart with \`pnpm dev\`.`,
-      )
-    ) {
-      return;
-    }
-    setShuttingDown(true);
-    void shutdownServer().catch(() => undefined);
+    setShutdownSummary(summary);
   }
 
   const emptyList =
@@ -278,6 +287,7 @@ export function Sidebar() {
         >
           »
         </button>
+        <ThemeToggle iconOnly />
         {all.map((s) => (
           <button
             key={s.id}
@@ -299,30 +309,16 @@ export function Sidebar() {
             aria-label="Settings & diagnostics"
             title="Settings & diagnostics"
           >
-            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-              <path
-                fill="currentColor"
-                d="M19.14,12.94a7.07,7.07 0 0,0 .06,-.94 7.07,7.07 0 0,0 -.06,-.94l2.03,-1.58a.5,.5 0 0,0 .12,-.64l-1.92,-3.32a.5,.5 0 0,0 -.61,-.22l-2.39,.96a7.3,7.3 0 0,0 -1.62,-.94l-.36,-2.54a.5,.5 0 0,0 -.5,-.42h-3.84a.5,.5 0 0,0 -.5,.42l-.36,2.54a7.3,7.3 0 0,0 -1.62,.94l-2.39,-.96a.5,.5 0 0,0 -.61,.22L2.74,8.84a.5,.5 0 0,0 .12,.64l2.03,1.58a7.07,7.07 0 0,0 -.06,.94 7.07,7.07 0 0,0 .06,.94L2.86,14.5a.5,.5 0 0,0 -.12,.64l1.92,3.32c.14,.24 .44,.34 .61,.22l2.39,-.96c.5,.4 1.04,.72 1.62,.94l.36,2.54a.5,.5 0 0,0 .5,.42h3.84a.5,.5 0 0,0 .5,-.42l.36,-2.54a7.3,7.3 0 0,0 1.62,-.94l2.39,.96c.24,.1 .55,0 .61,-.22l1.92,-3.32a.5,.5 0 0,0 -.12,-.64ZM12,15.5A3.5,3.5 0 1,1 12,8.5a3.5,3.5 0 0,1 0,7Z"
-              />
-            </svg>
+            <GearIcon />
           </button>
           <button
             type="button"
             className="icon-btn icon-danger"
-            onClick={() => void onShutdown()}
+            onClick={() => void askShutdown()}
             aria-label="Shut down studi0"
             title="Shut down"
           >
-            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-              <path fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" d="M12 3v8" />
-              <path
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-                d="M6.3 6.5a8 8 0 1 0 11.4 0"
-              />
-            </svg>
+            <PowerIcon />
           </button>
         </div>
       </aside>
@@ -332,8 +328,13 @@ export function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="brand-row">
-        <h1 className="brand">studi0</h1>
+        <h1 className="brand">
+          <button type="button" className="brand-home" onClick={() => selectSubject(null)} title="Home">
+            studi0
+          </button>
+        </h1>
         <div className="brand-actions">
+          <ThemeToggle />
           <button
             type="button"
             className="icon-btn"
@@ -438,7 +439,6 @@ export function Sidebar() {
                 <section key={g.id} className="group-section">
                   <div
                     className={`group-header${dragOverGroup === g.id ? ' drag-over' : ''}`}
-                    onClick={() => toggleGroup(g.id)}
                     onContextMenu={(e) => {
                       e.preventDefault();
                       openAt(e.clientX, e.clientY, groupMenuItems(g));
@@ -472,9 +472,17 @@ export function Sidebar() {
                     >
                       {isCollapsed ? '▸' : '▾'}
                     </button>
-                    <span className="group-name" title={g.name}>
+                    <button
+                      type="button"
+                      className="group-name"
+                      title={g.name}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleGroup(g.id);
+                      }}
+                    >
                       {g.name}
-                    </span>
+                    </button>
                     <button
                       type="button"
                       className="kebab"
@@ -510,30 +518,16 @@ export function Sidebar() {
           aria-label="Settings & diagnostics"
           title="Settings & diagnostics — probe servers, restart the teacher, cancel stuck jobs"
         >
-          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-            <path
-              fill="currentColor"
-              d="M19.14,12.94a7.07,7.07 0 0,0 .06,-.94 7.07,7.07 0 0,0 -.06,-.94l2.03,-1.58a.5,.5 0 0,0 .12,-.64l-1.92,-3.32a.5,.5 0 0,0 -.61,-.22l-2.39,.96a7.3,7.3 0 0,0 -1.62,-.94l-.36,-2.54a.5,.5 0 0,0 -.5,-.42h-3.84a.5,.5 0 0,0 -.5,.42l-.36,2.54a7.3,7.3 0 0,0 -1.62,.94l-2.39,-.96a.5,.5 0 0,0 -.61,.22L2.74,8.84a.5,.5 0 0,0 .12,.64l2.03,1.58a7.07,7.07 0 0,0 -.06,.94 7.07,7.07 0 0,0 .06,.94L2.86,14.5a.5,.5 0 0,0 -.12,.64l1.92,3.32c.14,.24 .44,.34 .61,.22l2.39,-.96c.5,.4 1.04,.72 1.62,.94l.36,2.54a.5,.5 0 0,0 .5,.42h3.84a.5,.5 0 0,0 .5,-.42l.36,-2.54a7.3,7.3 0 0,0 1.62,-.94l2.39,.96c.24,.1 .55,0 .61,-.22l1.92,-3.32a.5,.5 0 0,0 -.12,-.64ZM12,15.5A3.5,3.5 0 1,1 12,8.5a3.5,3.5 0 0,1 0,7Z"
-            />
-          </svg>
+          <GearIcon />
         </button>
         <button
           type="button"
           className="icon-btn icon-danger"
-          onClick={() => void onShutdown()}
+          onClick={() => void askShutdown()}
           aria-label="Shut down studi0"
           title="Shut down — cancels running builds, stops the teacher and API"
         >
-          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-            <path fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" d="M12 3v8" />
-            <path
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              d="M6.3 6.5a8 8 0 1 0 11.4 0"
-            />
-          </svg>
+          <PowerIcon />
         </button>
       </div>
       <AddSubjectDialog
@@ -545,6 +539,53 @@ export function Sidebar() {
         }}
       />
       <ContextMenu menu={menu} onClose={() => setMenu(null)} />
+      <PromptDialog
+        open={renameTarget !== null}
+        title="Rename subject"
+        label="New name"
+        initialValue={renameTarget?.name ?? ''}
+        submitLabel="Rename"
+        onSubmit={async (name) => {
+          await run(() => renameSubject(renameTarget!.id, { name }));
+        }}
+        onClose={() => setRenameTarget(null)}
+      />
+      <PromptDialog
+        open={renameGroupTarget !== null}
+        title="Rename group"
+        label="New name"
+        initialValue={renameGroupTarget?.name ?? ''}
+        submitLabel="Rename"
+        onSubmit={async (name) => {
+          await run(() => renameGroup(renameGroupTarget!.id, name));
+        }}
+        onClose={() => setRenameGroupTarget(null)}
+      />
+      <PromptDialog
+        open={deleteFilesTarget !== null}
+        title={`Delete ALL files of "${deleteFilesTarget?.name}" from disk?`}
+        label="This is irreversible. Type the subject name to confirm:"
+        mustMatch={deleteFilesTarget?.name ?? ''}
+        submitLabel="Delete files"
+        danger
+        onSubmit={async (confirm) => {
+          await run(() => deleteSubjectFiles(deleteFilesTarget!.id, { confirm }));
+        }}
+        onClose={() => setDeleteFilesTarget(null)}
+      />
+      <ConfirmDialog
+        open={shutdownSummary !== null}
+        title="Shut down studi0?"
+        body={shutdownSummary ?? ''}
+        confirmLabel="Shut down"
+        danger
+        onConfirm={() => {
+          setShutdownSummary(null);
+          setShuttingDown(true);
+          void shutdownServer().catch(() => undefined);
+        }}
+        onClose={() => setShutdownSummary(null)}
+      />
       {iconPickerFor !== null && (
         <EmojiPickerModal
           subjectName={iconPickerFor.name}
@@ -625,5 +666,3 @@ function CopyRestartCommand() {
     </button>
   );
 }
-
-

@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { formatDateTime } from '../lib/format';
 import type { ChatSession, ID } from '@studi0/shared';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { ContextMenu } from '../components/ContextMenu';
+import { PromptDialog } from '../components/PromptDialog';
 
 export function SessionList({
   sessions,
@@ -22,6 +24,8 @@ export function SessionList({
 }) {
   const [menu, setMenu] = useState<{ s: ChatSession; x: number; y: number } | null>(null);
   const [filter, setFilter] = useState('');
+  const [cleanOpen, setCleanOpen] = useState(false);
+  const [renameFor, setRenameFor] = useState<ChatSession | null>(null);
 
   const title = (s: ChatSession): string => s.title ?? `Chat — ${formatDateTime(s.createdAt)}`;
   const q = filter.trim().toLowerCase();
@@ -47,11 +51,7 @@ export function SessionList({
             type="button"
             className="btn btn-small"
             title="Remove chats that never got a message"
-            onClick={() => {
-              if (window.confirm(`Delete ${emptyCount} empty chat${emptyCount === 1 ? '' : 's'}? No messages are lost.`)) {
-                onClean();
-              }
-            }}
+            onClick={() => setCleanOpen(true)}
           >
             Clean empty ({emptyCount})
           </button>
@@ -106,10 +106,7 @@ export function SessionList({
             items: [
               {
                 label: 'Rename',
-                onSelect: () => {
-                  const name = window.prompt('Rename chat', menu.s.title ?? title(menu.s));
-                  if (name !== null && name.trim() !== '') onRename(menu.s, name.trim());
-                },
+                onSelect: () => setRenameFor(menu.s),
               },
               {
                 label: 'Delete chat',
@@ -122,6 +119,26 @@ export function SessionList({
           onClose={() => setMenu(null)}
         />
       )}
+      <ConfirmDialog
+        open={cleanOpen}
+        title="Clean empty chats"
+        body={`Delete ${emptyCount} empty chat${emptyCount === 1 ? '' : 's'}? No messages are lost.`}
+        confirmLabel="Clean"
+        onConfirm={() => {
+          setCleanOpen(false);
+          onClean();
+        }}
+        onClose={() => setCleanOpen(false)}
+      />
+      <PromptDialog
+        open={renameFor !== null}
+        title="Rename chat"
+        label="Title"
+        initialValue={renameFor !== null ? (renameFor.title ?? title(renameFor)) : ''}
+        submitLabel="Rename"
+        onSubmit={(name) => onRename(renameFor!, name)}
+        onClose={() => setRenameFor(null)}
+      />
     </div>
   );
 }

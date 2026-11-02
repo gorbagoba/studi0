@@ -67,4 +67,18 @@ describe('api client', () => {
     expect(init.body).toBe(JSON.stringify({ kind: 'build' }));
     expect(new Headers(init.headers).get('content-type')).toBe('application/json');
   });
+
+  it('surfaces a readable error when a 500 comes back with an empty body (QA #2)', async () => {
+    // the historical failure mode: empty-body POST + JSON content-type → Fastify
+    // 500 with a non-JSON body; the UI must show a readable message, never crash
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 500 })));
+    const err: unknown = await cancelJob('j1').then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(500);
+    expect((err as ApiError).code).toBe('INTERNAL');
+    expect((err as ApiError).message).toContain('500');
+  });
 });

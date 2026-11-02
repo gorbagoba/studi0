@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { ConfirmDialog } from './ConfirmDialog';
 
 export interface MenuItem {
   label: string;
-  /** window.confirm text shown before onSelect runs */
+  /** confirmation question shown in an in-app dialog before onSelect runs */
   confirm?: string;
   danger?: boolean;
   onSelect?: () => void;
@@ -27,6 +28,8 @@ export function ContextMenu({ menu, onClose }: { menu: MenuState | null; onClose
   const rootRef = useRef<HTMLDivElement | null>(null);
   const openerRef = useRef<HTMLElement | null>(null);
   const [subOpen, setSubOpen] = useState<number | null>(null);
+  // confirm items park here while the dialog is up; survives the menu closing
+  const [confirmItem, setConfirmItem] = useState<MenuItem | null>(null);
 
   useEffect(() => {
     if (menu === null) return;
@@ -61,8 +64,12 @@ export function ContextMenu({ menu, onClose }: { menu: MenuState | null; onClose
   }, [menu]);
 
   function runItem(item: MenuItem) {
+    if (item.confirm !== undefined) {
+      setConfirmItem(item);
+      close(false); // the dialog takes focus from here
+      return;
+    }
     close();
-    if (item.confirm !== undefined && !window.confirm(item.confirm)) return;
     item.onSelect?.();
   }
 
@@ -86,17 +93,20 @@ export function ContextMenu({ menu, onClose }: { menu: MenuState | null; onClose
     next?.focus();
   }
 
-  if (menu === null) return null;
+  if (menu === null && confirmItem === null) return null;
 
-  return createPortal(
-    <div
-      ref={rootRef}
-      className="ctx-menu"
-      role="menu"
-      tabIndex={-1}
-      style={{ left: menu.x, top: menu.y }}
-      onKeyDown={onKeyDown}
-    >
+  return (
+    <>
+      {menu !== null &&
+        createPortal(
+          <div
+            ref={rootRef}
+            className="ctx-menu"
+            role="menu"
+            tabIndex={-1}
+            style={{ left: menu.x, top: menu.y }}
+            onKeyDown={onKeyDown}
+          >
       {menu.items.map((item, i) =>
         item.submenu !== undefined ? (
           <div key={item.label} className="ctx-sub">
@@ -142,7 +152,22 @@ export function ContextMenu({ menu, onClose }: { menu: MenuState | null; onClose
           </button>
         ),
       )}
-    </div>,
-    document.body,
+          </div>,
+          document.body,
+        )}
+      <ConfirmDialog
+        open={confirmItem !== null}
+        title={confirmItem?.label ?? ''}
+        body={confirmItem?.confirm}
+        confirmLabel={confirmItem?.label ?? 'Confirm'}
+        danger={confirmItem?.danger}
+        onConfirm={() => {
+          const item = confirmItem;
+          setConfirmItem(null);
+          item?.onSelect?.();
+        }}
+        onClose={() => setConfirmItem(null)}
+      />
+    </>
   );
 }

@@ -65,6 +65,14 @@ export function parseSseFrame(frame: string): { event: string; data: string } | 
   return { event, data: dataLines.join('\n') };
 }
 
+// opencode step markers (§N§) are protocol artifacts, not content. The server
+// strips them per delta (chatStream.ts), but a marker split across two deltas
+// can leak a fragment — the web filters too, so markers never reach the chat DOM.
+// shortcut: a marker split across two token frames leaks its fragment — rare, cosmetic
+export function stripStepMarkers(text: string): string {
+  return text.replace(/\u00A7\d+\u00A7\s?/g, '');
+}
+
 export async function postChatStream(
   sessionId: ID,
   body: SendMessageRequest,
@@ -92,7 +100,7 @@ export async function postChatStream(
     }
     switch (parsed.event) {
       case 'token':
-        handlers.onToken?.((data as { text: string }).text);
+        handlers.onToken?.(stripStepMarkers((data as { text: string }).text));
         break;
       case 'lesson':
         handlers.onLesson?.(data as Lesson);

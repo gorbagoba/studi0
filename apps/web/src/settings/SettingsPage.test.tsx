@@ -1,7 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { SettingsPage } from './SettingsPage';
 import * as client from '../api/client';
+import { installDialogPolyfill } from '../testing/dialogPolyfill';
+
+installDialogPolyfill();
 
 const health = {
   ok: true,
@@ -39,9 +42,6 @@ afterEach(() => {
 });
 
 describe('SettingsPage', () => {
-  beforeEach(() => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-  });
   it('probes on mount and shows per-service status chips', async () => {
     vi.mocked(client.getHealth).mockResolvedValue(health);
     renderPage();
@@ -52,7 +52,7 @@ describe('SettingsPage', () => {
     expect(screen.getByText('No graph builds running.')).toBeTruthy();
   });
 
-  it('shows the restart-teacher action and calls it on click', async () => {
+  it('shows the restart-teacher action, confirms in a dialog, and calls it', async () => {
     vi.mocked(client.getHealth)
       .mockResolvedValueOnce({ ...health, opencode: { ...health.opencode, healthy: false } })
       .mockResolvedValue(health);
@@ -60,13 +60,16 @@ describe('SettingsPage', () => {
     renderPage();
     const btn = await screen.findByRole('button', { name: 'Restart teacher' });
     fireEvent.click(btn);
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog.textContent).toContain('Active chat turns are interrupted');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Restart' }));
     await waitFor(() => expect(client.restartTeacher).toHaveBeenCalled());
     expect(await screen.findByText('Teacher restarted.')).toBeTruthy();
     // re-probe after restart shows healthy again
     await waitFor(() => expect(screen.getByText('healthy')).toBeTruthy());
   });
 
-  it('lists active jobs with a cancel action', async () => {
+  it('lists active jobs with a confirmed cancel action', async () => {
     vi.mocked(client.getHealth).mockResolvedValue({
       ...health,
       jobs: [{ id: 'j1', subject: 'cs2040c', kind: 'build', status: 'running', done: 3, total: 56 }],
@@ -84,6 +87,8 @@ describe('SettingsPage', () => {
     expect(await screen.findByText('cs2040c')).toBeTruthy();
     expect(screen.getByText(/running/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel job' }));
     await waitFor(() => expect(client.cancelJob).toHaveBeenCalledWith('j1'));
   });
 

@@ -1,8 +1,11 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Sidebar } from './Sidebar';
 import * as client from '../api/client';
 import { AppProvider } from '../state/app';
+import { installDialogPolyfill } from '../testing/dialogPolyfill';
+
+installDialogPolyfill();
 
 const NOW = '2026-10-31T00:00:00.000Z';
 
@@ -110,14 +113,14 @@ describe('Sidebar groups and menus', () => {
   });
 
   it('warns that deleting a group ungroups its subjects', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     vi.mocked(client.deleteGroup).mockResolvedValue({ ok: true });
     renderSidebar();
     fireEvent.click(await screen.findByRole('button', { name: 'MATH options' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }));
-    expect(confirmSpy).toHaveBeenCalledWith(
-      expect.stringContaining('1 subject becomes ungrouped'),
-    );
+    // in-app confirm dialog replaces window.confirm
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog.textContent).toContain('1 subject becomes ungrouped');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(client.deleteGroup).toHaveBeenCalledWith('g1'));
   });
 
@@ -149,26 +152,53 @@ describe('Sidebar groups and menus', () => {
   });
 
   it('requires typing the subject name exactly to delete its files from disk', async () => {
-    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('linear algebra');
     vi.mocked(client.deleteSubjectFiles).mockResolvedValue({ ok: true });
     renderSidebar();
     fireEvent.click(await screen.findByRole('button', { name: 'Linear Algebra options' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Delete files from disk' }));
+    const dialog = await screen.findByRole('dialog');
+    const input = within(dialog).getByLabelText(
+      'This is irreversible. Type the subject name to confirm:',
+    );
+    const submit = screen.getByRole('button', { name: 'Delete files' }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+
+    fireEvent.change(input, { target: { value: 'linear algebra' } });
+    expect(submit.disabled).toBe(true);
     expect(client.deleteSubjectFiles).not.toHaveBeenCalled();
 
-    promptSpy.mockReturnValue('Linear Algebra');
+    fireEvent.change(input, { target: { value: 'Linear Algebra' } });
+    fireEvent.click(submit);
+    await waitFor(() =>
+      expect(client.deleteSubjectFiles).toHaveBeenCalledWith('s1', { confirm: 'Linear Algebra' }),
+    );
+  });
+
+  it('renames a subject from an in-app prompt dialog', async () => {
+    vi.mocked(client.renameSubject).mockResolvedValue({ ...subjects[0], name: 'LinAlg' });
+    renderSidebar();
     fireEvent.click(await screen.findByRole('button', { name: 'Linear Algebra options' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete files from disk' }));
-    await waitFor(() => expect(client.deleteSubjectFiles).toHaveBeenCalledWith('s1', { confirm: 'Linear Algebra' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Rename' }));
+    const dialog = await screen.findByRole('dialog');
+    const input = within(dialog).getByLabelText('New name');
+    const submit = screen.getByRole('button', { name: 'Rename' }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true); // unchanged name
+    fireEvent.change(input, { target: { value: 'LinAlg' } });
+    fireEvent.click(submit);
+    await waitFor(() =>
+      expect(client.renameSubject).toHaveBeenCalledWith('s1', { name: 'LinAlg' }),
+    );
   });
 
   it('shows the moved/skipped report after a merge', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     vi.mocked(client.mergeSubject).mockResolvedValue({ moved: ['a.pdf'], skipped: ['b.pdf'] });
     renderSidebar();
     fireEvent.click(await screen.findByRole('button', { name: 'Linear Algebra options' }));
     fireEvent.click(screen.getByRole('menuitem', { name: /Merge into subject/ }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'DB Systems' }));
+    // the merge asks in an in-app dialog before moving files
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'DB Systems' }));
     expect(await screen.findByText(/Merged 1 file into "DB Systems"/)).toBeTruthy();
     expect(screen.getByText(/b\.pdf/)).toBeTruthy();
   });

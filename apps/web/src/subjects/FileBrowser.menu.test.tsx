@@ -1,8 +1,11 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FileRow } from '@studi0/shared';
 import { FileBrowser } from './FileBrowser';
 import * as client from '../api/client';
+import { installDialogPolyfill } from '../testing/dialogPolyfill';
+
+installDialogPolyfill();
 
 const NOW = '2026-10-31T00:00:00.000Z';
 
@@ -93,15 +96,16 @@ describe('FileBrowser context menu', () => {
     expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeTruthy();
   });
 
-  it('deletes a file after confirm and refreshes the list', async () => {
+  it('deletes a file after confirming in the dialog and refreshes the list', async () => {
     vi.mocked(client.getTree).mockResolvedValue({ dir: 'material', entries: [pdf] });
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     vi.mocked(client.deleteFile).mockResolvedValue({ ok: true });
     const onFilesChanged = vi.fn();
     renderBrowser(onFilesChanged);
     fireEvent.click(await screen.findByRole('button', { name: 'big-deck.pdf options' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }));
-    expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining('material/big-deck.pdf'));
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog.textContent).toContain('material/big-deck.pdf');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(client.deleteFile).toHaveBeenCalledWith('f1'));
     await waitFor(() => expect(onFilesChanged).toHaveBeenCalledOnce());
   });
@@ -118,13 +122,17 @@ describe('FileBrowser context menu', () => {
     await waitFor(() => expect(onFilesChanged).toHaveBeenCalledOnce());
   });
 
-  it('renames a file via prompt', async () => {
+  it('renames a file via the prompt dialog', async () => {
     vi.mocked(client.getTree).mockResolvedValue({ dir: 'material', entries: [pdf] });
-    vi.spyOn(window, 'prompt').mockReturnValue('deck.pdf');
     vi.mocked(client.renameFile).mockResolvedValue({ ...pdf, name: 'deck.pdf', path: 'material/deck.pdf' });
     renderBrowser();
     fireEvent.click(await screen.findByRole('button', { name: 'big-deck.pdf options' }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Rename' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('New name'), {
+      target: { value: 'deck.pdf' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Rename' }));
     await waitFor(() => expect(client.renameFile).toHaveBeenCalledWith('f1', 'deck.pdf'));
   });
 

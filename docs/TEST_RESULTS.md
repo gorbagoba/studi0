@@ -102,6 +102,20 @@ Evidence files (temp): `studi0-qa\build-r.log`, `update-r.log` (full job timelin
 
 ---
 
+## UI/UX improvement pass record (frontend agent, 2026-11-02)
+
+One autonomous frontend pass (T01–T06 per docs/TASKS.md) on apps/web only. Read-only QA findings **#2, #7, #8 are now regression-covered on the web side**:
+
+- **#2 (cancel → 500 empty body):** `api/client.test.ts` proves a 500 with an empty body surfaces a readable `ApiError` ("Request failed (500)"), never a crash; the bodyless-POST fix stays covered by the existing client tests.
+- **#7 (job status regress to "Queued…"):** the lifecycle-rank guard was extracted to `graph/jobStatuses.ts` (`keepNewerJob`) and applied to **both** the SSE `onJob` path and the start-POST path in `SubjectPage` (previously only start-POST was guarded); unit-tested in `graph/jobStatuses.test.ts`, plus the existing live-wired SubjectPage regression test.
+- **#8 (opencode step markers in chat DOM):** the web token pump now strips `N` markers too (`api/sse.ts` `stripStepMarkers`, mirroring the server-side pump); tested end-to-end over streamed SSE frames in `api/sse.test.ts`. Visually re-verified on a real chat (no markers in DOM).
+
+Also delivered in the same pass: all 14 `window.prompt`/`window.confirm` call sites replaced with styled in-app dialogs (`components/ConfirmDialog.tsx`, `components/PromptDialog.tsx`), dashboard Home overview, graph-pane chrome (legend/loading/fullscreen/zoom hint) around the untouched sandboxed iframe, CSS debt collapse (duplicate `.kebab`/`.lesson-frame`/`.setup-form fieldset` rules, dead `.shutdown-btn`, duplicated inline SVGs), and a narrow-viewport sidebar stack. Every behavior change is enumerated in the pass's close-out summary.
+
+Gates on the pass tree (repo root): `pnpm typecheck` ✓ · `pnpm lint` exit 0 ✓ · `pnpm test` **181/181** (server 22 files/110 + web 18 files/71) ✓ · `pnpm build` ✓. Impeccable-style audit: 19/20 (Excellent), no open P0/P1. `graph.html` / `graphify-out/` artifacts untouched (read-only; no `graphify export html` regen was needed — the export's own theme/legend already covers the pane).
+
+---
+
 ## Notes
 
 - Read-only on app code throughout both runs; no fixes applied by QA.

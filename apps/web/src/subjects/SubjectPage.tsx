@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import type { ID, Job, JobStatus } from '@studi0/shared';
+import type { ID, Job } from '@studi0/shared';
 import { openSubjectEvents } from '../api/sse';
 import { useSubject } from '../api/hooks';
 import { useApp } from '../state/app';
@@ -9,7 +9,7 @@ import { Badge } from '../components/Badge';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { FileBrowser } from './FileBrowser';
 import { UploadZone } from './UploadZone';
-import { TERMINAL_JOB_STATUSES } from '../graph/jobStatuses';
+import { TERMINAL_JOB_STATUSES, keepNewerJob } from '../graph/jobStatuses';
 
 // heavy tab panels load on demand — the tab bar must stay instant
 const GraphView = lazy(() => import('../graph/GraphView').then((m) => ({ default: m.GraphView })));
@@ -33,17 +33,6 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'setup', label: 'Setup' },
 ];
 
-// lifecycle order — a snapshot must never move backwards through it
-const JOB_STATUS_RANK: Record<JobStatus, number> = {
-  queued: 0,
-  running: 1,
-  cancelling: 2,
-  complete: 3,
-  partial: 3,
-  failed: 3,
-  cancelled: 3,
-};
-
 export function SubjectPage({ subjectId }: { subjectId: ID }) {
   const { tab, setTab, lessonPath, openLesson, closeLesson } = useApp();
   const subject = useSubject(subjectId);
@@ -57,7 +46,8 @@ export function SubjectPage({ subjectId }: { subjectId: ID }) {
     () =>
       openSubjectEvents(subjectId, {
         onJob: (job) => {
-          setLiveJob(job);
+          // never let a late/duplicate frame regress the snapshot (QA #7)
+          setLiveJob((cur) => (cur === null ? job : keepNewerJob(cur, job)));
           if (TERMINAL_JOB_STATUSES.has(job.status)) {
             subjectRef.current.reload();
             setV((s) => ({ ...s, graph: s.graph + 1 }));
@@ -133,13 +123,7 @@ export function SubjectPage({ subjectId }: { subjectId: ID }) {
                   stale={s.stale}
                   onStarted={(j) => {
                     // the POST response can resolve after SSE already advanced the job — keep the newer snapshot
-                    setLiveJob((cur) =>
-                      cur !== null &&
-                      cur.id === j.id &&
-                      JOB_STATUS_RANK[cur.status] > JOB_STATUS_RANK[j.status]
-                        ? cur
-                        : j,
-                    );
+                    setLiveJob((cur) => (cur === null ? j : keepNewerJob(cur, j)));
                     subjectRef.current.reload();
                   }}
                 />

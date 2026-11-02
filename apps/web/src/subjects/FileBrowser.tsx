@@ -8,10 +8,12 @@ import {
   splitPdf,
 } from '../api/client';
 import { useSubjects, useTree } from '../api/hooks';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { ContextMenu } from '../components/ContextMenu';
 import type { MenuItem, MenuState } from '../components/ContextMenu';
 import { EmptyState } from '../components/EmptyState';
 import { ErrorBanner } from '../components/ErrorBanner';
+import { PromptDialog } from '../components/PromptDialog';
 import { formatBytes, formatDateTime } from '../lib/format';
 
 const ROOTS: readonly TreeDir[] = ['material', 'lessons', 'reference', 'graphify-out'];
@@ -33,11 +35,12 @@ export function FileBrowser({
   const [splitError, setSplitError] = useState<string | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [splitTarget, setSplitTarget] = useState<string | null>(null);
+  const [renameTarget, setRenameTarget] = useState<FileRow | null>(null);
   const tree = useTree(subjectId, dir, version);
   const subjects = useSubjects();
 
-  async function onSplit(path: string): Promise<void> {
-    if (!window.confirm(`Split "${path}" into per-lecture PDFs? The original file is kept.`)) return;
+  async function doSplit(path: string): Promise<void> {
     setSplitting(true);
     setSplitError(null);
     try {
@@ -51,16 +54,10 @@ export function FileBrowser({
     }
   }
 
-  async function onRenameFile(e: FileRow): Promise<void> {
-    const name = window.prompt(`Rename "${e.name}"`, e.name);
-    if (name === null || name.trim() === '' || name.trim() === e.name) return;
-    setActionError(null);
-    try {
-      await renameFile(e.id, name.trim());
-      onFilesChanged();
-    } catch (err) {
-      setActionError(displayError(err));
-    }
+  async function doRenameFile(e: FileRow, name: string): Promise<void> {
+    // rejections surface inside the prompt dialog
+    await renameFile(e.id, name);
+    onFilesChanged();
   }
 
   async function onDeleteFile(e: FileRow): Promise<void> {
@@ -87,7 +84,7 @@ export function FileBrowser({
   function fileMenuItems(e: FileRow): MenuItem[] {
     const others = (subjects.data ?? []).filter((o) => o.id !== subjectId);
     const items: MenuItem[] = [
-      { label: 'Rename', onSelect: () => void onRenameFile(e) },
+      { label: 'Rename', onSelect: () => setRenameTarget(e) },
       {
         label: 'Delete',
         danger: true,
@@ -185,7 +182,7 @@ export function FileBrowser({
                         <button
                           className="btn btn-small"
                           disabled={splitting}
-                          onClick={() => void onSplit(entry.path)}
+                          onClick={() => setSplitTarget(entry.path)}
                         >
                           Split into parts
                         </button>
@@ -212,6 +209,27 @@ export function FileBrowser({
           </table>
         ))}
       <ContextMenu menu={menu} onClose={() => setMenu(null)} />
+      <ConfirmDialog
+        open={splitTarget !== null}
+        title="Split PDF into parts"
+        body={`Split "${splitTarget}" into per-lecture PDFs? The original file is kept.`}
+        confirmLabel="Split"
+        onConfirm={() => {
+          const path = splitTarget;
+          setSplitTarget(null);
+          if (path !== null) void doSplit(path);
+        }}
+        onClose={() => setSplitTarget(null)}
+      />
+      <PromptDialog
+        open={renameTarget !== null}
+        title={`Rename "${renameTarget?.name}"`}
+        label="New name"
+        initialValue={renameTarget?.name ?? ''}
+        submitLabel="Rename"
+        onSubmit={(name) => doRenameFile(renameTarget!, name)}
+        onClose={() => setRenameTarget(null)}
+      />
     </section>
   );
 }

@@ -26,10 +26,12 @@ describe('App', () => {
     vi.unstubAllGlobals();
   });
 
-  it('renders the app shell with sidebar and empty state', async () => {
+  it('renders the app shell with sidebar and dashboard home', async () => {
     render(<App />);
     expect(screen.getByRole('heading', { name: 'studi0' })).toBeTruthy();
     expect(await screen.findByText('No subjects yet.')).toBeTruthy();
-    expect(screen.getByText('No subject selected')).toBeTruthy();
+    expect(await screen.findByText('No subjects yet')).toBeTruthy();
+    // the sidebar CTA and the dashboard quick action share the label
+    expect(screen.getAllByRole('button', { name: 'Add subject' }).length).toBeGreaterThanOrEqual(1);
   });
 });

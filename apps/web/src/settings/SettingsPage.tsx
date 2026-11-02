@@ -3,6 +3,7 @@ import type { Health } from '@studi0/shared';
 import { cancelJob, displayError, getHealth, restartTeacher } from '../api/client';
 import { useApp } from '../state/app';
 import { Badge } from '../components/Badge';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { ErrorBanner } from '../components/ErrorBanner';
 
 /** App-level diagnostics: probe every service, restart the teacher, cancel stuck jobs. */
@@ -13,6 +14,8 @@ export function SettingsPage() {
   const [restarting, setRestarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [restartOpen, setRestartOpen] = useState(false);
+  const [cancelTarget, setCancelTarget] = useState<{ id: string; label: string } | null>(null);
 
   const probe = useCallback(async () => {
     setProbing(true);
@@ -32,7 +35,6 @@ export function SettingsPage() {
   }, [probe]);
 
   async function onRestartTeacher() {
-    if (!window.confirm('Restart the teacher? Active chat turns are interrupted.')) return;
     setRestarting(true);
     setNote(null);
     setError(null);
@@ -47,8 +49,7 @@ export function SettingsPage() {
     }
   }
 
-  async function onCancelJob(id: string, label: string) {
-    if (!window.confirm(`Cancel ${label}? In-flight work is lost; cached chunks survive.`)) return;
+  async function onCancelJob(id: string) {
     setNote(null);
     try {
       await cancelJob(id);
@@ -133,7 +134,7 @@ export function SettingsPage() {
           <button
             type="button"
             className={oc.healthy ? 'btn' : 'btn-danger'}
-            onClick={() => void onRestartTeacher()}
+            onClick={() => setRestartOpen(true)}
             disabled={restarting}
             title="Stop and reboot the managed opencode serve; the API stays up"
           >
@@ -156,7 +157,9 @@ export function SettingsPage() {
                 <button
                   type="button"
                   className="btn btn-small"
-                  onClick={() => void onCancelJob(j.id, `${j.subject} ${j.kind}`)}
+                  onClick={() =>
+                    setCancelTarget({ id: j.id, label: `${j.subject} ${j.kind}` })
+                  }
                 >
                   Cancel
                 </button>
@@ -172,6 +175,31 @@ export function SettingsPage() {
         from this page is impossible: the process you would need to start it is the one being
         stopped. Run <code>pnpm dev</code> to bring the stack back.
       </p>
+
+      <ConfirmDialog
+        open={restartOpen}
+        title="Restart the teacher?"
+        body="Active chat turns are interrupted."
+        confirmLabel="Restart"
+        onConfirm={() => {
+          setRestartOpen(false);
+          void onRestartTeacher();
+        }}
+        onClose={() => setRestartOpen(false)}
+      />
+      <ConfirmDialog
+        open={cancelTarget !== null}
+        title={`Cancel ${cancelTarget?.label ?? ''}?`}
+        body="In-flight work is lost; cached chunks survive."
+        confirmLabel="Cancel job"
+        danger
+        onConfirm={() => {
+          const id = cancelTarget?.id;
+          setCancelTarget(null);
+          if (id !== undefined) void onCancelJob(id);
+        }}
+        onClose={() => setCancelTarget(null)}
+      />
     </section>
   );
 }

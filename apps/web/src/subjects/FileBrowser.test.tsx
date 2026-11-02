@@ -1,7 +1,10 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FileEntry } from '@studi0/shared';
 import { FileBrowser } from './FileBrowser';
+import { installDialogPolyfill } from '../testing/dialogPolyfill';
+
+installDialogPolyfill();
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -46,7 +49,6 @@ describe('FileBrowser split action', () => {
   });
 
   it('offers split only on PDFs, posts the file, lists the parts, and reloads', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const onFilesChanged = vi.fn();
     const { rerender } = render(
       <FileBrowser subjectId="s1" version={0} onOpenLesson={() => {}} onFilesChanged={onFilesChanged} />,
@@ -57,7 +59,10 @@ describe('FileBrowser split action', () => {
     expect(splitButtons).toHaveLength(1); // only the PDF row gets the action
 
     fireEvent.click(splitButtons[0]!);
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('big-deck.pdf'));
+    // in-app confirm dialog replaces window.confirm
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog.textContent).toContain('big-deck.pdf');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Split' }));
 
     expect(await screen.findByText(/Split into 2 parts/)).toBeTruthy();
     expect(screen.getByText(/big-deck_p01\.pdf/)).toBeTruthy();
@@ -76,13 +81,13 @@ describe('FileBrowser split action', () => {
   });
 
   it('does nothing when the confirm is dismissed', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
     const onFilesChanged = vi.fn();
     render(
       <FileBrowser subjectId="s1" version={0} onOpenLesson={() => {}} onFilesChanged={onFilesChanged} />,
     );
 
     fireEvent.click(await screen.findByRole('button', { name: 'Split into parts' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
     await waitFor(() =>
       expect(vi.mocked(fetch).mock.calls.filter(([u]) => String(u).includes('/split-pdf'))).toHaveLength(0),
     );
@@ -91,7 +96,6 @@ describe('FileBrowser split action', () => {
   });
 
   it('surfaces split failures as an error banner', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     vi.mocked(fetch).mockImplementation((input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes('/tree'))
@@ -105,6 +109,7 @@ describe('FileBrowser split action', () => {
     );
 
     fireEvent.click(await screen.findByRole('button', { name: 'Split into parts' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Split' }));
     expect(await screen.findByText(/pypdf missing/)).toBeTruthy();
     expect(screen.queryByText(/big-deck_p01/)).toBeNull();
   });
