@@ -45,7 +45,7 @@ describe('migrations', () => {
     ]);
     expect(
       (db.prepare('PRAGMA user_version').get() as unknown as { user_version: number }).user_version,
-    ).toBe(4);
+    ).toBe(5);
   });
 
   it('is idempotent — reopening a migrated db changes nothing', () => {

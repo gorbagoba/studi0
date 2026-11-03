@@ -7,7 +7,7 @@ export type Db = DatabaseSync;
 const migrationsDir = path.join(import.meta.dirname, 'migrations');
 
 function listMigrations(): { version: number; sql: string }[] {
-  return readdirSync(migrationsDir)
+  const migrations = readdirSync(migrationsDir)
     .filter((f) => f.endsWith('.sql'))
     .sort()
     .map((f) => ({
@@ -15,6 +15,15 @@ function listMigrations(): { version: number; sql: string }[] {
       sql: readFileSync(path.join(migrationsDir, f), 'utf8'),
     }))
     .filter((m) => Number.isFinite(m.version));
+  // two files sharing a prefix silently shadow each other (version <= current skips the second) — fail fast instead
+  const seen = new Set<number>();
+  for (const m of migrations) {
+    if (seen.has(m.version)) {
+      throw new Error(`duplicate migration version ${m.version} in ${migrationsDir} — rename one file`);
+    }
+    seen.add(m.version);
+  }
+  return migrations;
 }
 
 /** Open the metadata DB, apply pending migrations (PRAGMA user_version). */
