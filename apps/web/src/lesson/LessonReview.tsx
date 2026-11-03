@@ -32,6 +32,7 @@ export function LessonReview({
   const [review, setReview] = useState<LessonReviewResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [answered, setAnswered] = useState(0);
+  const [runnerOpen, setRunnerOpen] = useState(true);
 
   useEffect(() => {
     let stopped = false;
@@ -94,11 +95,11 @@ export function LessonReview({
             {genBusy ? 'Generating…' : 'Generate review questions'}
           </button>
         </div>
-      ) : (
+      ) : runnerOpen ? (
         <>
           <QuizRunner
             questions={questions}
-            onClose={() => setQuestions([])}
+            onClose={() => setRunnerOpen(false)}
             onAnswered={() => setAnswered((n) => n + 1)}
           />
           <form onSubmit={(e) => void onMark(e)} className="btn-row">
@@ -110,6 +111,10 @@ export function LessonReview({
             )}
           </form>
         </>
+      ) : (
+        <button className="btn" onClick={() => setRunnerOpen(true)}>
+          Show review questions ({questions.length})
+        </button>
       )}
       {review !== null && (
         <div className={`review-verdict ${review.verdict}`} role="status">

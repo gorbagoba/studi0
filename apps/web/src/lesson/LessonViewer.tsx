@@ -143,18 +143,6 @@ export function LessonViewer({
         ) : (
           error === null && <p className="muted">Loading lesson…</p>
         )}
-        {reviewOpen && lesson !== null && (
-          <Suspense fallback={<p className="muted">Loading review…</p>}>
-            <LessonReview
-              subjectId={subjectId}
-              lessonId={lesson.id}
-              onReviewed={() => {
-                setReviewOpen(false);
-                onLessonSaved?.();
-              }}
-            />
-          </Suspense>
-        )}
         <div className="lesson-pager" aria-label="Lesson pager">
           <button
             type="button"
@@ -180,10 +168,24 @@ export function LessonViewer({
         </div>
       </div>
       <aside className="lesson-chat">
+        {reviewOpen && lesson !== null && (
+          <Suspense fallback={<p className="muted">Loading review…</p>}>
+            <LessonReview
+              subjectId={subjectId}
+              lessonId={lesson.id}
+              onReviewed={() => {
+                setReviewOpen(false);
+                onLessonSaved?.();
+              }}
+            />
+          </Suspense>
+        )}
         {lessons.loading ? (
           <p className="muted">Loading…</p>
-        ) : lesson !== null ? (
+        ) : lesson !== null && !reviewOpen ? (
           <ChatPanel subjectId={subjectId} lessonId={lesson.id} onLessonSaved={onLessonSaved} />
+        ) : lesson !== null ? (
+          <p className="muted">Chat is paused while the review is open — close it to keep asking.</p>
         ) : (
           <p className="muted">
             This lesson is not indexed yet, so lesson-scoped chat is unavailable. It appears here
