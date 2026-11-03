@@ -21,6 +21,7 @@ export interface Config {
   sseHeartbeatMs: number;
   splitTargetBytes: number; // pdf-split target size per part (test/tuning seam)
   maxChunkConcurrency: number; // chunk-wave parallelism (STUDI0_MAX_CHUNK_CONCURRENCY, clamped 1–12)
+  harness: 'opencode' | 'claude' | 'codex'; // user's coding harness (STUDI0_HARNESS) — skill targeting + pipeline agent lane; runner is opencode today (seam for future adapters)
 }
 
 // repo root = apps/server/src -> up 3
@@ -40,6 +41,8 @@ try {
       'STUDI0_DATA_DIR',
       'STUDI0_MAX_CHUNK_CONCURRENCY',
       'STUDI0_SPLIT_TARGET_BYTES',
+      'STUDI0_HARNESS',
+      'OPENCODE_BIN',
     ]);
     if (KNOWN_ENV_KEYS.has(m[1]) && process.env[m[1]] === undefined) {
       process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
@@ -74,5 +77,8 @@ export function makeConfig(dataDir?: string): Config {
     maxChunkConcurrency: Number.isFinite(chunkConcurrency)
       ? Math.min(12, Math.max(1, chunkConcurrency))
       : 4,
+    harness: ['opencode', 'claude', 'codex'].includes(process.env.STUDI0_HARNESS ?? '')
+      ? (process.env.STUDI0_HARNESS as 'opencode' | 'claude' | 'codex')
+      : 'opencode',
   };
 }

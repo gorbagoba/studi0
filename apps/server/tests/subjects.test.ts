@@ -54,7 +54,9 @@ describe('subjects CRUD (T03)', () => {
     );
     const pipelineCanonical = (
       await readFile(path.resolve(import.meta.dirname, '../src/../agents/studi0-pipeline.md'), 'utf8')
-    ).replaceAll('{{CHUNK_CONCURRENCY}}', String(makeConfig().maxChunkConcurrency));
+    )
+      .replaceAll('{{CHUNK_CONCURRENCY}}', String(makeConfig().maxChunkConcurrency))
+      .replaceAll('{{HARNESS}}', makeConfig().harness);
     expect(pipelineSynced).toBe(pipelineCanonical);
     await rm(courseDir, { recursive: true, force: true });
   });

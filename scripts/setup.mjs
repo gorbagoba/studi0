@@ -1,12 +1,16 @@
 #!/usr/bin/env node
 // scripts/setup.mjs — one cross-platform setup for studi0 (no bash/ps1 twins).
-// Checks runtimes, detects AI harnesses (never installs them), picks free ports,
-// writes repo-root .env, then installs + builds. Run: `pnpm setup`.
-// Pure helpers (port pick, .env parse) are exported for tests; main only runs
-// when invoked directly.
+// Scan → ask → apply: scans runtimes + harnesses + opencode bin resolution
+// (never installs harnesses), asks which harness you use and how to fetch
+// Python deps (pip/uv), then opt-in fixes (OPENCODE_BIN, pinned python
+// packages, graphify skill targeted at YOUR harness), picks free ports,
+// writes repo-root .env (incl. STUDI0_HARNESS), then installs + builds.
+// Re-runnable: prompts default to your saved .env choices.
+// Pure helpers (port pick, .env parse, bin resolution, harness pick) are
+// exported for tests; main only runs when invoked directly.
 import { spawnSync } from 'node:child_process';
 import net from 'node:net';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { pathToFileURL } from 'node:url';
@@ -14,6 +18,7 @@ import { pathToFileURL } from 'node:url';
 const repoRoot = path.resolve(import.meta.dirname, '..');
 const isWin = process.platform === 'win32';
 const FORCE = process.argv.includes('--force');
+const YES = process.argv.includes('--yes'); // consent to every download prompt (non-interactive)
 
 export const PORT_KEYS = { api: 'PORT', oc: 'OC_PORT', vite: 'VITE_PORT', preview: 'PREVIEW_PORT' };
 export const PORT_DEFAULTS = { api: 3001, oc: 44096, vite: 5173, preview: 4173 };
@@ -26,12 +31,93 @@ export const PIP_PINS = [
   },
 ];
 
-// optional skills install (opt-in): graphify skill for direct opencode use.
+// optional skills install (opt-in): graphify skill for YOUR harness.
 // sources may drift — registry name is the fallback; failure is a warning, never fatal.
 const SKILL_NAME = 'graphify';
 const SKILL_SOURCES = ['https://github.com/graphify-labs/graphify', 'graphify-labs/graphify'];
 const SKILLS_CLI_PIN = '1.7.4'; // pnpm view skills — re-pin deliberately (typosquat/regression guard)
 const WITH_SKILLS = process.argv.includes('--with-skills');
+
+/** harness ask values → skills-CLI agent ids (skills add -a <id>). */
+export const SKILL_AGENT_BY_CLI = { opencode: 'opencode', claude: 'claude-code', codex: 'codex' };
+
+/**
+ * Default harness: studi0's own runner first (the pipeline runs on opencode),
+ * then whatever else is installed. `have` is { opencode, claude, codex } booleans.
+ */
+export function pickDefaultHarness(have) {
+  if (have.opencode) return 'opencode';
+  if (have.claude) return 'claude';
+  if (have.codex) return 'codex';
+  return null;
+}
+
+/**
+ * Mirror apps/server resolveOpencodeBin: a real .exe wins on Windows; a .cmd
+ * shim is only usable if the npm-global layout sits next to it; on POSIX any
+ * which-hit (shebang script) works. `lines` = `where opencode` / `which opencode`.
+ */
+export function resolveOpencodeFromLines(lines, exists = (p) => existsSync(p)) {
+  const norm = lines.map((l) => l.trim()).filter(Boolean);
+  const exe = norm.find((l) => l.toLowerCase().endsWith('.exe'));
+  if (exe) return { ok: true, exe, label: exe };
+  const cmd = norm.find((l) => l.toLowerCase().endsWith('.cmd'));
+  if (cmd) {
+    const npmExe = path.join(path.dirname(cmd), 'node_modules', '@opencode', 'cli', 'bin', 'opencode.exe');
+    if (exists(npmExe)) return { ok: true, exe: npmExe, label: npmExe };
+    return { ok: false, exe: null, cmd, label: 'only a .cmd shim found — the server needs a real .exe (npm-layout miss)' };
+  }
+  const bare = norm.find((l) => !/\.(exe|cmd|ps1|bat)$/i.test(l));
+  if (bare && exists(bare)) return { ok: true, exe: bare, label: bare };
+  return { ok: false, exe: null, cmd: null, label: 'opencode not found on PATH' };
+}
+
+/** Bounded search for opencode.exe under the pnpm global dir (pnpm shims carry no npm layout). */
+export function findOpencodeExeCandidates(whereLines, { exists = existsSync, localAppData = process.env.LOCALAPPDATA, walk = walkForExe } = {}) {
+  const cands = [];
+  const cmd = whereLines.map((l) => l.trim()).find((l) => l.toLowerCase().endsWith('.cmd'));
+  if (cmd) {
+    const npmLayout = path.join(path.dirname(cmd), 'node_modules', '@opencode', 'cli', 'bin', 'opencode.exe');
+    if (exists(npmLayout)) cands.push(npmLayout);
+  }
+  if (localAppData) {
+    const pnpmDir = path.join(localAppData, 'pnpm');
+    if (exists(pnpmDir)) {
+      for (const hit of walk(pnpmDir)) if (!cands.includes(hit)) cands.push(hit);
+    }
+  }
+  return cands.filter((c) => exists(c));
+}
+
+/** Depth/budget-limited walk collecting opencode.exe paths (never throws). */
+export function walkForExe(dir, { maxDepth = 8, maxVisited = 8000, maxHits = 3 } = {}) {
+  const hits = [];
+  let visited = 0;
+  const step = (d, depth) => {
+    if (depth > maxDepth || visited > maxVisited || hits.length >= maxHits) return;
+    let entries;
+    try {
+      entries = readdirSync(d, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      visited++;
+      if (visited > maxVisited || hits.length >= maxHits) return;
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) step(p, depth + 1);
+      else if (e.isFile() && e.name === 'opencode.exe') hits.push(p);
+    }
+  };
+  step(dir, 0);
+  return hits;
+}
+
+/** argv for installing the pinned python packages with uv, targeting the SAME
+    interpreter the server uses (imports + the `graphify` entry point must land there). */
+export function uvInstallArgs(pythonBin, specs) {
+  return ['pip', 'install', '--python', pythonBin, ...specs];
+}
 
 function run(bin, argv, opts = {}) {
   const { shell, ...spawnOpts } = opts;
@@ -138,25 +224,29 @@ function pipVersion(py, pkg) {
   return r.out.match(/^Version: (.+)$/m)?.[1] ?? null;
 }
 
-function ensurePipPkgs(py) {
-  const lines = [];
-  const install = [...py.prefix, '-m', 'pip', 'install', ...PIP_PINS.map((p) => p.spec)];
-  const missing = PIP_PINS.filter((pin) => {
+function missingPipPkgs(py) {
+  return PIP_PINS.filter((pin) => {
     const have = pipVersion(py, pin.pkg);
     return !(have && pin.want(have));
   });
+}
+
+/** Install the missing pins with pip (python -m pip) or uv (--python server's interpreter). */
+function installPipPkgs(py, tool) {
+  const missing = missingPipPkgs(py);
   if (missing.length === 0) {
     return PIP_PINS.map((p) => `✔ pip: ${p.pkg} ${pipVersion(py, p.pkg)} already satisfied`);
   }
-  // one pip call installs every missing pin (satisfied pins are left alone by pip)
-  process.stdout.write(`+ ${py.bin} ${install.join(' ')}\n`);
-  const r = run(py.bin, install, { timeout: 0 });
-  lines.push(
+  const specs = missing.map((p) => p.spec);
+  const r =
+    tool === 'uv'
+      ? run('uv', uvInstallArgs(py.bin, specs), { timeout: 0 })
+      : run(py.bin, [...py.prefix, '-m', 'pip', 'install', ...specs], { timeout: 0 });
+  return [
     r.ok
-      ? `✔ pip: installed ${missing.map((p) => p.spec).join(', ')}`
-      : `✗ pip: install failed — ${r.err.split(/\r?\n/).slice(-2).join(' | ')}`,
-  );
-  return lines;
+      ? `✔ ${tool}: installed ${specs.join(', ')}`
+      : `✗ ${tool}: install failed — ${r.err.split(/\r?\n/).slice(-2).join(' | ')}`,
+  ];
 }
 
 /** `--version` probe → installed; optional cheap auth probe → logged in / not. */
@@ -175,30 +265,137 @@ function checkCli(name, authProbe) {
   return { ok: true, label: `${name}: ${version} (login state unknown — run \`${name}\` once to log in)` };
 }
 
-/** Optional opt-in: install the graphify skill for direct opencode use (never fatal). */
-async function maybeInstallGraphifySkill(oc, pnpmOk) {
-  if (!oc.ok || !pnpmOk) return '– skills install skipped (needs opencode + pnpm)';
-  const yes =
-    WITH_SKILLS ||
-    (process.stdin.isTTY &&
-      (await new Promise((res) => {
-        const rl = createInterface({ input: process.stdin, output: process.stdout });
-        rl.question('install the graphify skill for direct opencode use? [y/N] ', (a) => {
-          rl.close();
-          res(/^\s*y(es)?\s*$/i.test(a));
-        });
-      })));
+/** Mirror of the server's bin resolution against THIS machine (.env override first). */
+function checkOpencodeBin(envBin) {
+  if (envBin) {
+    const ok = existsSync(envBin);
+    return { ok, label: `OPENCODE_BIN=${envBin}${ok ? '' : ' — path does not exist'}` };
+  }
+  if (!isWin) {
+    const w = run('which', ['opencode']);
+    const first = w.ok ? w.out.split(/\r?\n/).find(Boolean) : null;
+    return first
+      ? { ok: true, label: `bin ok: ${first}` }
+      : { ok: false, label: 'opencode not on PATH — the server cannot spawn the teacher' };
+  }
+  const w = run('where.exe', ['opencode']);
+  if (!w.ok) return { ok: false, label: 'opencode not on PATH — the server cannot spawn the teacher' };
+  const res = resolveOpencodeFromLines(w.out.split(/\r?\n/));
+  return res.ok
+    ? { ok: true, label: `bin ok: ${res.label}` }
+    : { ok: false, label: res.label, whereLines: w.out.split(/\r?\n/) };
+}
+
+/** y/N prompt; YES flag or non-TTY returns false (callers note the skip). */
+function askYesNo(q) {
+  if (YES) return true;
+  if (!process.stdin.isTTY) return false;
+  return new Promise((res) => {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(q, (a) => {
+      rl.close();
+      res(/^\s*y(es)?\s*$/i.test(a));
+    });
+  });
+}
+
+/** Numbered-choice prompt; returns the chosen value or null (skip). Choices: [{key,label}]. */
+function askChoice(q, choices, defaultKey) {
+  if (!process.stdin.isTTY) return null;
+  return new Promise((res) => {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    console.log(q);
+    choices.forEach((c, i) => console.log(`  [${i + 1}] ${c.label}${c.key === defaultKey ? ' (default)' : ''}`));
+    rl.question(`choose 1-${choices.length} (enter = ${defaultKey}): `, (a) => {
+      rl.close();
+      const n = Number(a.trim());
+      if (a.trim() === '') return res(defaultKey);
+      if (Number.isInteger(n) && n >= 1 && n <= choices.length) return res(choices[n - 1].key);
+      res(null);
+    });
+  });
+}
+
+/**
+ * Harness ask: which CLI the user actually drives — decides the graphify skill
+ * target and is written to .env (STUDI0_HARNESS) so the pipeline agent knows
+ * its lane. Default = first detected (opencode, claude, codex).
+ */
+async function chooseHarness(have, saved) {
+  const choices = Object.keys(SKILL_AGENT_BY_CLI).map((cli) => ({
+    key: cli,
+    label: `${cli}${have[cli] ? ' — detected' : ' — not detected'}`,
+  }));
+  const def = saved ?? pickDefaultHarness(have) ?? 'opencode';
+  if (YES) return def;
+  const picked = await askChoice('which coding harness do you use? (drives the graphify skill + the pipeline agent\'s lane)', choices, def);
+  return picked ?? def;
+}
+
+/** pip vs uv for the pinned python packages; the pick itself is the consent. */
+async function choosePyTool(py, haveUv) {
+  if (!py.ok) return null;
+  if (missingPipPkgs(py).length === 0) return null; // nothing to install — no ask
+  const choices = [
+    { key: 'pip', label: `pip (python -m pip install ${PIP_PINS.map((p) => p.spec).join(' ')})` },
+    ...(haveUv ? [{ key: 'uv', label: `uv (targets the same interpreter the server uses)` }] : []),
+    { key: 'skip', label: 'skip — install later' },
+  ];
+  const def = 'pip';
+  if (YES) return 'pip';
+  const picked = await askChoice(`install pinned python packages (${PIP_PINS.map((p) => p.pkg).join(', ')}) with which tool?`, choices, def);
+  return picked === 'skip' ? null : picked;
+}
+
+/** OPENCODE_BIN fix: candidate search → confirm → write .env (or paste path). */
+async function maybeFixOpencodeBin(ocBin) {
+  if (ocBin.ok) return [];
+  const notes = [];
+  let target = null;
+  const cands = ocBin.whereLines ? findOpencodeExeCandidates(ocBin.whereLines) : [];
+  if (cands.length > 0) {
+    target = cands[0];
+    const yes = await askYesNo(`set OPENCODE_BIN=${target} in .env? [y/N] `);
+    if (!yes) target = null;
+  } else if (process.stdin.isTTY && !YES) {
+    console.log('could not locate opencode.exe automatically (checked npm layout + pnpm global dir)');
+    target = await new Promise((res) => {
+      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      rl.question('paste the full path to opencode.exe (blank to skip): ', (a) => {
+        rl.close();
+        const p = a.trim().replace(/^["']|["']$/g, '');
+        res(p && existsSync(p) ? p : null);
+        if (p && !existsSync(p)) console.log('  path does not exist — skipping');
+      });
+    });
+  }
+  if (target) {
+    writeEnvFile({ OPENCODE_BIN: target });
+    notes.push(`✔ .env: OPENCODE_BIN=${target} (restart \`pnpm dev\` to apply)`);
+  } else {
+    notes.push('✗ OPENCODE_BIN unset — the server will report OPENCODE_DOWN ("teacher not running") until it is set');
+  }
+  return notes;
+}
+
+/** Opt-in: install the graphify skill for the CHOSEN harness only (never fatal). */
+async function maybeInstallGraphifySkill(harness) {
+  if (!WITH_SKILLS && !YES && !process.stdin.isTTY) {
+    return '– skills install skipped (non-interactive — opt in: `pnpm setup --with-skills`)';
+  }
+  const yes = WITH_SKILLS || (await askYesNo(`install the graphify skill for ${harness} only? [y/N] `));
   if (!yes) return '– skills install skipped (opt in: `pnpm setup --with-skills`)';
+  const agent = SKILL_AGENT_BY_CLI[harness] ?? harness;
   for (const src of SKILL_SOURCES) {
-    process.stdout.write(`+ pnpm dlx skills@${SKILLS_CLI_PIN} add ${src} -g -y --skill ${SKILL_NAME}\n`);
-    const r = run('pnpm', ['dlx', `skills@${SKILLS_CLI_PIN}`, 'add', src, '-g', '-y', '--skill', SKILL_NAME], {
+    process.stdout.write(`+ pnpm dlx skills@${SKILLS_CLI_PIN} add ${src} -g -y --skill ${SKILL_NAME} -a ${agent}\n`);
+    const r = run('pnpm', ['dlx', `skills@${SKILLS_CLI_PIN}`, 'add', src, '-g', '-y', '--skill', SKILL_NAME, '-a', agent], {
       shell: isWin,
       timeout: 0,
     });
-    if (r.ok) return `✔ skills: ${SKILL_NAME} installed for opencode (${src})`;
+    if (r.ok) return `✔ skills: ${SKILL_NAME} installed for ${agent} (${src})`;
     console.log(`  skills source failed: ${src}`);
   }
-  return `⚠ skills install failed for every source — setup continues; try \`pnpm dlx skills add ${SKILL_NAME} -g -y\` later`;
+  return `⚠ skills install failed for every source — setup continues; try \`pnpm dlx skills add ${SKILL_NAME} -g -y -a ${agent}\` later`;
 }
 
   /** Is the holder of this port one of OUR services? ( possession + shape, per service) */
@@ -266,6 +463,7 @@ async function maybeInstallGraphifySkill(oc, pnpmOk) {
 async function main() {
   const rows = [];
   const notes = [];
+  const envFile = readEnvFile();
 
   rows.push(['node', checkNode()]);
   const pnpm = checkPnpm();
@@ -274,22 +472,44 @@ async function main() {
   rows.push(['python', py]);
   const oc = checkCli('opencode', { argv: ['auth', 'list'], hint: 'opencode auth login' });
   rows.push(['opencode', oc]);
-  rows.push(['claude', checkCli('claude')]);
-  rows.push(['codex', checkCli('codex')]);
+  const claude = checkCli('claude');
+  rows.push(['claude', claude]);
+  const codex = checkCli('codex');
+  rows.push(['codex', codex]);
+  const ocBin = checkOpencodeBin(process.env.OPENCODE_BIN ?? envFile.OPENCODE_BIN);
+  rows.push(['oc bin', ocBin]);
 
-  if (pnpm.ok && py.ok) notes.push(...ensurePipPkgs(py));
-  else notes.push('– pip installs skipped (need python ≥3.12; fix python above and re-run `pnpm setup`)');
-  notes.push(await maybeInstallGraphifySkill(oc, pnpm.ok));
+  // ── ask phase: harness + python tool (defaults = saved .env / detection) ──
+  const savedHarness = envFile.STUDI0_HARNESS && SKILL_AGENT_BY_CLI[envFile.STUDI0_HARNESS] ? envFile.STUDI0_HARNESS : null;
+  const harness = await chooseHarness({ opencode: oc.ok, claude: claude.ok, codex: codex.ok }, savedHarness);
+  notes.push(`harness: ${harness}${savedHarness && savedHarness !== harness ? ' (changed)' : ''}`);
+  const uvCheck = run('uv', ['--version']);
+  const pyTool = await choosePyTool(py, uvCheck.ok);
 
-  const { picks, changes, notes: portNotes } = await pickPorts();
-  notes.push(...portNotes);
+  // ── apply phase ──
+  if (pyTool) notes.push(...installPipPkgs(py, pyTool));
+  notes.push(...(await maybeFixOpencodeBin(ocBin)));
+  notes.push(await maybeInstallGraphifySkill(harness));
+
+  const envChanges = { STUDI0_HARNESS: harness };
   const envPath = path.join(repoRoot, '.env');
-  if (Object.keys(changes).length > 0) {
+  const { picks, changes: portChanges, notes: portNotes } = await pickPorts();
+  notes.push(...portNotes);
+  const allChanges = { ...envChanges, ...portChanges };
+  if (Object.keys(allChanges).length > 0) {
     if (existsSync(envPath) && !FORCE) {
-      notes.push(`✗ .env exists — refusing to update (${Object.keys(changes).join(', ')}). Re-run with --force.`);
+      // STUDI0_HARNESS is setup-owned and consented — always writable; ports keep the guard
+      const portKeys = Object.keys(portChanges);
+      if (portKeys.length === 0) {
+        writeEnvFile(envChanges);
+        notes.push(`✔ .env: STUDI0_HARNESS=${harness}`);
+      } else {
+        writeEnvFile(envChanges);
+        notes.push(`✗ .env exists — port changes refused (${portKeys.join(', ')}). Re-run with --force.`);
+      }
     } else {
-      writeEnvFile(changes);
-      notes.push(`✔ .env written: ${Object.entries(changes).map(([k, v]) => `${k}=${v}`).join(', ')}`);
+      writeEnvFile(allChanges);
+      notes.push(`✔ .env written: ${Object.entries(allChanges).map(([k, v]) => `${k}=${v}`).join(', ')}`);
     }
   } else {
     notes.push('✔ ports as configured are free — no .env changes needed');
@@ -326,7 +546,12 @@ async function main() {
   if (!oc.ok || oc.label.includes('not logged in')) {
     console.log('  • install/log in opencode (chat + practice need it): https://opencode.ai — then `opencode auth login`');
   }
-  if (!py.ok) console.log('  • install python ≥3.12, then re-run `pnpm setup` for the pinned pip packages');
+  if (!ocBin.ok) {
+    console.log('  • set OPENCODE_BIN to opencode.exe (teacher shows "not running" otherwise) — setup can do this, rerun to retry');
+  }
+  if (!py.ok) console.log('  • install python ≥3.12, then re-run `pnpm setup` for the pinned python packages');
+  if (!uvCheck.ok) console.log('  • tip: install uv (https://docs.astral.sh/uv/) for faster python installs — setup will offer it next run');
+  console.log(`  • harness: ${harness} (STUDI0_HARNESS in .env — re-run \`pnpm setup\` to change; skills + pipeline agent follow it)`);
   console.log('  • pnpm dev        # API + web + managed opencode serve');
   console.log('  • pnpm stop       # stop everything (graceful)');
   console.log('  • docs/BUILD.md   # manual setup + platform notes');

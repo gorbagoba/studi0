@@ -8,7 +8,14 @@ import {
   pickFreePort,
   parseEnvFile,
   writeEnvFile,
+  resolveOpencodeFromLines,
+  findOpencodeExeCandidates,
+  walkForExe,
+  uvInstallArgs,
+  SKILL_AGENT_BY_CLI,
+  pickDefaultHarness,
 } from '../../../scripts/setup.mjs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import type { TestHarness } from './helpers';
 
 // ── pure parsers (T-X4: platform branches stay unit-tested; live-Linux boot is out of scope) ──
@@ -164,5 +171,72 @@ describe('setup helpers', () => {
       },
     );
     expect(writes[0]).toBe('PORT=3999\nSTUDI0_MAX_CHUNK_CONCURRENCY=6\nOTHER=yes\n');
+  });
+});
+
+describe('opencode bin resolution (setup mirrors the server)', () => {
+  it('a real .exe on PATH wins outright', () => {
+    const r = resolveOpencodeFromLines(['C:\\tools\\opencode.exe', 'C:\\tools\\opencode.cmd']);
+    expect(r.ok).toBe(true);
+    expect(r.exe).toBe('C:\\tools\\opencode.exe');
+  });
+
+  it('a .cmd is only usable when the npm-global layout sits next to it', () => {
+    const cmd = 'C:\\Users\\f\\AppData\\Roaming\\npm\\opencode.cmd';
+    const layout = 'C:\\Users\\f\\AppData\\Roaming\\npm\\node_modules\\@opencode\\cli\\bin\\opencode.exe';
+    const ok = resolveOpencodeFromLines([cmd], (p) => p === layout);
+    expect(ok.ok).toBe(true);
+    expect(ok.exe).toBe(layout);
+    const miss = resolveOpencodeFromLines([cmd], () => false); // pnpm-style shim: no npm layout
+    expect(miss.ok).toBe(false);
+    expect(miss.label).toContain('.cmd');
+  });
+
+  it('POSIX: a which-hit that is not a shim works; nothing found fails', () => {
+    expect(resolveOpencodeFromLines(['/usr/local/bin/opencode'], () => true).ok).toBe(true);
+    expect(resolveOpencodeFromLines([]).ok).toBe(false);
+  });
+
+  it('candidate search: npm layout first, then the pnpm-global walk, deduped', () => {
+    const layout = 'C:\\npm\\node_modules\\@opencode\\cli\\bin\\opencode.exe';
+    const store = 'C:\\pnpm\\global\\.pnpm\\store\\opencode.exe';
+    const cands = findOpencodeExeCandidates(['C:\\npm\\opencode.cmd'], {
+      exists: (p) => p === layout || p === store || p === 'C:\\Local\\pnpm',
+      localAppData: 'C:\\Local',
+      walk: () => [store, layout], // walk may rediscover the npm-layout hit
+    });
+    expect(cands).toEqual([layout, store]);
+  });
+
+  it('walkForExe honors maxHits and never throws on unreadable dirs', () => {
+    const tmp = mkdtempSync('studi0-walk-');
+    try {
+      mkdirSync(`${tmp}/a/b/c`, { recursive: true });
+      writeFileSync(`${tmp}/a/b/opencode.exe`, 'x');
+      writeFileSync(`${tmp}/a/b/c/opencode.exe`, 'x');
+      expect(walkForExe(tmp, { maxHits: 1 })).toHaveLength(1);
+      expect(walkForExe(`${tmp}/nope`)).toEqual([]);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('harness + python tool choices', () => {
+  it('harness default: opencode first, then claude, then codex, else null', () => {
+    expect(pickDefaultHarness({ opencode: false, claude: true, codex: true })).toBe('claude');
+    expect(pickDefaultHarness({ opencode: true, claude: true, codex: true })).toBe('opencode');
+    expect(pickDefaultHarness({ opencode: false, claude: false, codex: true })).toBe('codex');
+    expect(pickDefaultHarness({})).toBeNull();
+  });
+
+  it('skills agent ids map per CLI', () => {
+    expect(SKILL_AGENT_BY_CLI).toEqual({ opencode: 'opencode', claude: 'claude-code', codex: 'codex' });
+  });
+
+  it('uv installs target the server interpreter, pins ride along in order', () => {
+    expect(uvInstallArgs('python', ['graphifyy==0.9.95', 'pypdf>=6,<7'])).toEqual([
+      'pip', 'install', '--python', 'python', 'graphifyy==0.9.95', 'pypdf>=6,<7',
+    ]);
   });
 });

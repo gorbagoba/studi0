@@ -2,6 +2,18 @@
 export const PORT_KEYS: Record<string, string>;
 export const PORT_DEFAULTS: Record<string, number>;
 export const PIP_PINS: { pkg: string; spec: string; want: (v: string) => boolean }[];
+export const SKILL_AGENT_BY_CLI: Record<string, string>;
+export function pickDefaultHarness(have: { opencode?: boolean; claude?: boolean; codex?: boolean }): 'opencode' | 'claude' | 'codex' | null;
+export function resolveOpencodeFromLines(
+  lines: string[],
+  exists?: (p: string) => boolean,
+): { ok: boolean; exe: string | null; label: string; cmd?: string | null };
+export function findOpencodeExeCandidates(
+  whereLines: string[],
+  opts?: { exists?: (p: string) => boolean; localAppData?: string; walk?: (dir: string) => string[] },
+): string[];
+export function walkForExe(dir: string, opts?: { maxDepth?: number; maxVisited?: number; maxHits?: number }): string[];
+export function uvInstallArgs(pythonBin: string, specs: string[]): string[];
 export function portBusy(port: number): Promise<boolean>;
 export function pickFreePort(
   start: number,
