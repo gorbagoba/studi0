@@ -9,6 +9,6 @@ qa-tmp/
 data-*/
 .codedev-mcp/
 *.tmp.mjs
-.cortexkit
+.cortexkit/
 
 
