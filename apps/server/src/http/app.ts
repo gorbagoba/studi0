@@ -47,11 +47,12 @@ export async function buildApp(opts: { dataDir?: string; dbPath?: string } = {})
   const events = new EventBus();
   const oc = new OpencodeManager(cfg);
   const oneshot = makeOneshot(cfg);
+  const teacherRun = makeOneshot(cfg, { agent: 'studi0-teacher', timeoutMs: cfg.setupRunTimeoutMs });
   const runPipeline: RunPipelineFn = makeRunPipeline(oneshot, db, cfg, events);
   const queue = new JobQueue(db, events, cfg, runPipeline);
   const feedQuestions = makeFeedQuestions(db, events, oneshot);
 
-  const ctx: Ctx = { cfg, db, events, queue, oc, oneshot, runPipeline, feedQuestions };
+  const ctx: Ctx = { cfg, db, events, queue, oc, oneshot, teacherRun, runPipeline, feedQuestions };
 
   const app = Fastify({ logger: true, bodyLimit: cfg.maxFileBytes + 1024 * 1024 });
 

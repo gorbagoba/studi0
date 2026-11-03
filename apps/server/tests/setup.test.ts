@@ -4,6 +4,10 @@ import path from 'node:path';
 import { makeHarness } from './helpers';
 import { SETUP_BEGIN } from '../src/subjects/mission.js';
 
+// fan-out test asserts generating:true — pin a resolvable binary so the
+// 'skipped' branch (no opencode on the machine) can't flip it
+process.env.OPENCODE_BIN = process.execPath;
+
 let h: Awaited<ReturnType<typeof makeHarness>>;
 
 afterEach(async () => {
@@ -18,6 +22,7 @@ async function createSubject(name: string): Promise<{ id: string; root: string }
 describe('course setup form → MISSION.md', () => {
   it('writes the delimited section; blanks are omitted', async () => {
     h = await makeHarness();
+    h.ctx.teacherRun = async () => 'ok';
     const { id, root } = await createSubject('S1');
     const res = await h.app.inject({
       method: 'POST',
@@ -40,6 +45,7 @@ describe('course setup form → MISSION.md', () => {
 
   it('retakes replace the delimited block and preserve teacher-written content', async () => {
     h = await makeHarness();
+    h.ctx.teacherRun = async () => 'ok';
     const { id, root } = await createSubject('S2');
     await mkdir(path.join(root), { recursive: true });
     await writeFile(path.join(root, 'MISSION.md'), '# MISSION\n\nTeacher wrote this.\n');
@@ -63,6 +69,7 @@ describe('course setup form → MISSION.md', () => {
 
   it('an empty form yields the interview fallback line', async () => {
     h = await makeHarness();
+    h.ctx.teacherRun = async () => 'ok';
     const { id, root } = await createSubject('S3');
     const res = await h.app.inject({
       method: 'POST',
@@ -76,6 +83,7 @@ describe('course setup form → MISSION.md', () => {
 
   it('marker spoofing in a field cannot break out of the delimited block', async () => {
     h = await makeHarness();
+    h.ctx.teacherRun = async () => 'ok';
     const { id, root } = await createSubject('S5');
     await h.app.inject({
       method: 'POST',
@@ -102,6 +110,7 @@ describe('course setup form → MISSION.md', () => {
 
   it('rejects oversized fields with 400', async () => {
     h = await makeHarness();
+    h.ctx.teacherRun = async () => 'ok';
     const { id } = await createSubject('S4');
     const res = await h.app.inject({
       method: 'POST',
@@ -109,5 +118,34 @@ describe('course setup form → MISSION.md', () => {
       payload: { courseIdentity: 'x'.repeat(201) },
     });
     expect(res.statusCode).toBe(400);
+  });
+});
+
+describe('setup run fan-out', () => {
+  it('fires the teacher run once per subject and reports generating', async () => {
+    h = await makeHarness();
+    const calls: string[] = [];
+    let seenPrompt = '';
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    // deferred stub: holds the run in flight so the one-run guard is provably active
+    h.ctx.teacherRun = async (_cwd, prompt) => {
+      calls.push('x');
+      seenPrompt = prompt;
+      await gate;
+      return 'ok';
+    };
+    const { id } = await createSubject('SR1');
+    const res = await h.app.inject({ method: 'POST', url: `/api/subjects/${id}/setup`, payload: { courseIdentity: 'X' } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, generating: true });
+    // second submit while the run is in flight: no double spawn
+    const res2 = await h.app.inject({ method: 'POST', url: `/api/subjects/${id}/setup`, payload: { courseIdentity: 'X2' } });
+    expect(res2.json().generating).toBe(false);
+    expect(calls).toHaveLength(1);
+    release();
+    await new Promise((r) => setTimeout(r, 50)); // let the fire-and-forget settle
+    expect(calls).toHaveLength(1);
+    expect(seenPrompt).toContain('COURSE SETUP RUN');
   });
 });

@@ -9,6 +9,7 @@ import {
   renameSubjectBodySchema,
 } from '@studi0/shared';
 import { applySetupToMission, setupCompleted } from '../../subjects/mission.js';
+import { startSetupRun } from '../../subjects/setupRun.js';
 import { NAME_RE } from '../../subjects/service.js';
 import * as subjectsRepo from '../../db/repos/subjects.js';
 import * as groupsRepo from '../../db/repos/groups.js';
@@ -32,7 +33,8 @@ export async function registerSubjectRoutes(app: FastifyInstance, ctx: Ctx): Pro
     const subject = requireSubject(db, (req.params as { id: string }).id);
     const body = parseWith(courseSetupBodySchema, req.body ?? {});
     await applySetupToMission(subject.path, body);
-    return { ok: true };
+    const state = startSetupRun(ctx, subject);
+    return { ok: true, generating: state === 'started' };
   });
 
   app.get('/api/subjects/:id/setup-status', async (req) => {

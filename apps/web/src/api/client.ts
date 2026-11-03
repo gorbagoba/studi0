@@ -130,8 +130,11 @@ export const deleteGroup = (id: ID): Promise<{ ok: boolean }> =>
 export const getBuildLog = (id: ID): Promise<{ log: string | null }> =>
   api<{ log: string | null }>(`/api/subjects/${id}/graph/log`);
 
-export const setupCourse = (id: ID, body: CourseSetupBody): Promise<{ ok: boolean }> =>
-  send<{ ok: boolean }>('POST', `/api/subjects/${id}/setup`, body);
+export const setupCourse = (
+  id: ID,
+  body: CourseSetupBody,
+): Promise<{ ok: boolean; generating?: boolean }> =>
+  send<{ ok: boolean; generating?: boolean }>('POST', `/api/subjects/${id}/setup`, body);
 
 export const shutdownServer = (): Promise<{ ok: boolean }> =>
   send<{ ok: boolean }>('POST', '/api/shutdown');

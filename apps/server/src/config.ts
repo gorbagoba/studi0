@@ -18,6 +18,8 @@ export interface Config {
   vitePort: number; // dev server + Host allowlist must agree (scripts/setup.mjs writes these)
   previewPort: number; // vite preview
   oneshotTimeoutMs: number;
+  /** whole-course lesson generation (setup run) — far longer than a oneshot */
+  setupRunTimeoutMs: number;
   sseHeartbeatMs: number;
   splitTargetBytes: number; // pdf-split target size per part (test/tuning seam)
   maxChunkConcurrency: number; // chunk-wave parallelism (STUDI0_MAX_CHUNK_CONCURRENCY, clamped 1–12)
@@ -72,6 +74,7 @@ export function makeConfig(dataDir?: string): Config {
     vitePort: Number(process.env.VITE_PORT ?? 5173),
     previewPort: Number(process.env.PREVIEW_PORT ?? 4173),
     oneshotTimeoutMs: 300_000,
+    setupRunTimeoutMs: 2_700_000, // whole-course lesson generation runs long
     sseHeartbeatMs: 15_000,
     splitTargetBytes: Number(process.env.STUDI0_SPLIT_TARGET_BYTES ?? 15 * 1024 * 1024),
     maxChunkConcurrency: Number.isFinite(chunkConcurrency)

@@ -4,22 +4,33 @@ import { stripStepMarkers } from '../pipeline/parse.js';
 
 export type OneshotFn = (cwd: string, prompt: string, signal?: AbortSignal) => Promise<string>;
 
+export interface OneshotOpts {
+  /** run as a specific (execute-capable) agent instead of the default */
+  agent?: string;
+  /** override the kill timeout — whole-course generation needs far more than oneshotTimeoutMs */
+  timeoutMs?: number;
+}
+
 /**
  * One-shot headless `opencode run` — used by pipeline verification, rotation
- * summaries, and practice generation/verification/grading. Same spawn/kill
- * semantics as the pipeline runner (arg array, shell:false, opencode resolved
- * to a real executable).
+ * summaries, practice generation/verification/grading, and teacher setup runs.
+ * Same spawn/kill semantics as the pipeline runner (arg array, shell:false,
+ * opencode resolved to a real executable).
  */
 export const makeOneshot =
-  (cfg: Config): OneshotFn =>
+  (cfg: Config, opts: OneshotOpts = {}): OneshotFn =>
   async (cwd, prompt, signal) => {
     if (!resolveOpencodeBin()) {
       const err = new Error('OPENCODE_DOWN: opencode CLI not found');
       (err as NodeJS.ErrnoException).name = 'OneshotDown';
       throw err;
     }
-    // --standalone: private server inside the kill-tree (same as pipeline runner)
-    const { done, child } = spawnArgs(['run', '--auto', '--standalone', prompt], cwd);
+    // --standalone: private server inside the kill-tree (same as pipeline runner);
+    // --agent: the default agent is plan-only and would never execute writes
+    const args = ['run', '--auto'];
+    if (opts.agent) args.push('--agent', opts.agent);
+    args.push('--standalone', prompt);
+    const { done, child } = spawnArgs(args, cwd);
     // same kill semantics as the pipeline runner: the tree, not just the child
     const kill = () => {
       if (child.pid !== undefined) killTreeWithDeadline(child.pid);
@@ -28,7 +39,7 @@ export const makeOneshot =
     signal?.addEventListener('abort', kill, { once: true });
     const timer = setTimeout(() => {
       if (child.exitCode === null) kill();
-    }, cfg.oneshotTimeoutMs);
+    }, opts.timeoutMs ?? cfg.oneshotTimeoutMs);
     timer.unref();
     try {
       const res = await done;

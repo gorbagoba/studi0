@@ -18,6 +18,8 @@ export interface Ctx {
   queue: JobQueue;
   oc: OpencodeManager;
   oneshot: OneshotFn;
+  /** headless teacher runs (--agent studi0-teacher) — course setup lesson generation */
+  teacherRun: OneshotFn;
   runPipeline: RunPipelineFn;
   feedQuestions: FeedQuestionsFn;
 }

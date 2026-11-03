@@ -22,6 +22,7 @@ export function CourseSetupForm({ subjectId }: { subjectId: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<boolean | null>(null); // null = unknown yet
+  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
     let stopped = false;
@@ -47,9 +48,10 @@ export function CourseSetupForm({ subjectId }: { subjectId: string }) {
     setBusy(true);
     setError(null);
     try {
-      await setupCourse(subjectId, body);
+      const r = await setupCourse(subjectId, body);
       setSaved(true);
       setDone(true);
+      setGenerating(r?.generating === true);
     } catch (err) {
       setError(displayError(err));
     } finally {
@@ -75,6 +77,13 @@ export function CourseSetupForm({ subjectId }: { subjectId: string }) {
         <p className="banner banner-ok" role="status">
           Mission written. Open <strong>Chat</strong> and ask the teacher to propose your first lesson
           plan — retaking this form later updates the same section.
+        </p>
+      )}
+      {saved && generating && (
+        <p className="banner banner-ok" role="status">
+          The teacher is now generating <strong>all course lessons</strong> in the background — watch{' '}
+          <strong>Chat</strong> for its questions. Lessons appear in the <strong>Lessons</strong> tab
+          (and the Overview checklist) as they finish.
         </p>
       )}
       <form className="setup-form" onSubmit={(e) => void onSubmit(e)}>
