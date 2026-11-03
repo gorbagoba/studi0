@@ -8,6 +8,7 @@ import type {
   FileRow,
   Group,
   Health,
+  LessonReviewResponse,
   MergeResponse,
   OpencodeHealth,
   DueResponse,
@@ -226,10 +227,12 @@ export function getQuestions(
   id: ID,
   topic: string,
   type: '' | QuestionType,
+  lessonId?: ID,
 ): Promise<Question[]> {
   const params = new URLSearchParams();
   if (topic !== '') params.set('topic', topic);
   if (type !== '') params.set('type', type);
+  if (lessonId) params.set('lessonId', lessonId);
   const qs = params.toString();
   return api<Question[]>(`/api/subjects/${id}/questions${qs === '' ? '' : `?${qs}`}`);
 }
@@ -240,8 +243,15 @@ export const generateQuestions = (
 ): Promise<Question[]> =>
   send<Question[]>('POST', `/api/subjects/${id}/questions/generate`, body);
 
-export const answerQuestion = (questionId: ID, answer: string): Promise<AnswerResponse> =>
-  send<AnswerResponse>('POST', `/api/questions/${questionId}/answer`, { answer });
+export const answerQuestion = (
+  questionId: ID,
+  answer: string,
+  confidence?: 'high' | 'medium' | 'low',
+): Promise<AnswerResponse> =>
+  send<AnswerResponse>('POST', `/api/questions/${questionId}/answer`, confidence ? { answer, confidence } : { answer });
+
+export const submitLessonReview = (lessonId: ID): Promise<LessonReviewResponse> =>
+  send<LessonReviewResponse>('POST', `/api/lessons/${lessonId}/review`, {});
 
 export const verifyKey = (questionId: ID): Promise<VerifyKeyResponse> =>
   send<VerifyKeyResponse>('POST', `/api/questions/${questionId}/verify-key`);

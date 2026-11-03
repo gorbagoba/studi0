@@ -8,6 +8,7 @@ export interface AttemptRow {
   subject_id: string;
   answer: string;
   grade_json: string;
+  confidence: string | null;
   created_at: string;
 }
 
@@ -17,11 +18,12 @@ export function insertAttempt(
   subjectId: string,
   answer: string,
   grade: Grade,
+  confidence?: 'high' | 'medium' | 'low',
 ): AttemptRow {
   const id = randomUUID();
   db.prepare(
-    'INSERT INTO attempts (id, question_id, subject_id, answer, grade_json, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-  ).run(id, questionId, subjectId, answer, JSON.stringify(grade), new Date().toISOString());
+    'INSERT INTO attempts (id, question_id, subject_id, answer, grade_json, confidence, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  ).run(id, questionId, subjectId, answer, JSON.stringify(grade), confidence ?? null, new Date().toISOString());
   return db.prepare('SELECT * FROM attempts WHERE id = ?').get(id) as unknown as AttemptRow;
 }
 

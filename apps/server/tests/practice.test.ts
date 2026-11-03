@@ -260,3 +260,50 @@ describe('practice engine (T07)', () => {
     expect(quizSpecSchema.safeParse(goodQuiz).success).toBe(true);
   });
 });
+
+describe('successive relearning + hypercorrection (research wave)', () => {
+  it('keeps the interval at the current rung until 3 consecutive corrects, then advances', async () => {
+    h = await makeHarness();
+    patchOc(h);
+    const id = await createSubject('P5');
+    h.ctx.oneshot = stubOneshot('```studi0-quiz\n' + JSON.stringify(goodQuiz) + '\n```');
+    const [q] = (
+      await h.app.inject({
+        method: 'POST',
+        url: `/api/subjects/${id}/questions/generate`,
+        payload: { topic: 'heaps', count: 1 },
+      })
+    ).json();
+    const answer = (payload: Record<string, unknown>) =>
+      h.app.inject({ method: 'POST', url: `/api/questions/${q.id}/answer`, payload });
+    const first = await (await answer({ answer: 'a' })).json();
+    expect(first.intervalDays).toBe(1); // streak 1 - still drilling 1-day
+    const second = await (await answer({ answer: 'a', confidence: 'high' })).json();
+    expect(second.intervalDays).toBe(1); // streak 2 - criterion not met
+    const third = await (await answer({ answer: 'a', confidence: 'low' })).json();
+    expect(third.intervalDays).toBe(3); // 3-correct criterion met -> rung advances
+  });
+
+  it('stores the confidence captured before the reveal', async () => {
+    h = await makeHarness();
+    patchOc(h);
+    const id = await createSubject('P6');
+    h.ctx.oneshot = stubOneshot('```studi0-quiz\n' + JSON.stringify(goodQuiz) + '\n```');
+    const [q] = (
+      await h.app.inject({
+        method: 'POST',
+        url: `/api/subjects/${id}/questions/generate`,
+        payload: { topic: 'heaps', count: 1 },
+      })
+    ).json();
+    await h.app.inject({
+      method: 'POST',
+      url: `/api/questions/${q.id}/answer`,
+      payload: { answer: 'a', confidence: 'high' },
+    });
+    const row = h.ctx.db.prepare('SELECT confidence FROM attempts WHERE question_id = ?').get(q.id) as {
+      confidence: string | null;
+    };
+    expect(row.confidence).toBe('high');
+  });
+});

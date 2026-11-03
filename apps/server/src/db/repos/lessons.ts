@@ -8,6 +8,7 @@ export interface LessonRow {
   rel_path: string;
   title: string;
   node_tags_json: string;
+  reviewed_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -21,7 +22,13 @@ export function lessonToDto(row: LessonRow): Lesson {
     nodeTags: JSON.parse(row.node_tags_json) as string[],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    reviewedAt: row.reviewed_at ?? null,
   };
+}
+
+/** Mark a lesson as review-passed (tick in the UI); null clears it. */
+export function setReviewed(db: Db, lessonId: string, reviewedAt: string | null): void {
+  db.prepare('UPDATE lessons SET reviewed_at = ? WHERE id = ?').run(reviewedAt, lessonId);
 }
 
 export function upsertLesson(

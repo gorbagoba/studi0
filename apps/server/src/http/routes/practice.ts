@@ -25,11 +25,11 @@ export async function registerPracticeRoutes(app: FastifyInstance, ctx: Ctx): Pr
 
   app.get('/api/subjects/:id/questions', async (req) => {
     const subject = requireSubject(db, (req.params as { id: string }).id);
-    const q = req.query as { topic?: string; type?: string };
+    const q = req.query as { topic?: string; type?: string; lessonId?: string };
     const type =
       q.type === 'mcq' || q.type === 'short' || q.type === 'code' ? q.type : undefined;
     return questionsRepo
-      .listQuestions(db, subject.id, { topic: q.topic, type })
+      .listQuestions(db, subject.id, { topic: q.topic, type, lessonId: q.lessonId })
       .map(questionsRepo.questionToDto);
   });
 
@@ -54,12 +54,12 @@ export async function registerPracticeRoutes(app: FastifyInstance, ctx: Ctx): Pr
 
   app.post('/api/questions/:id/answer', async (req) => {
     const row = requireQuestion(db, (req.params as { id: string }).id);
-    const { answer } = parseWith(answerBodySchema, req.body);
+    const { answer, confidence } = parseWith(answerBodySchema, req.body);
     if (row.type !== 'mcq') ocGate(ctx); // short/code grading needs the LLM
     const grade = await gradeAnswer(ctx.oneshot, subjectPath(db, row.subject_id), row, answer);
-    const attempt = attemptsRepo.insertAttempt(db, row.id, row.subject_id, answer, grade);
+    const attempt = attemptsRepo.insertAttempt(db, row.id, row.subject_id, answer, grade, confidence);
     const sched = scheduleRepo.getSchedule(db, row.id);
-    const next = nextSchedule(sched?.interval_index ?? 0, grade.verdict === 'correct', cfg);
+    const next = nextSchedule(sched?.interval_index ?? 0, grade.verdict === 'correct', cfg, sched?.correct_streak ?? 0);
     const dueAt = new Date(Date.now() + next.intervalDays * 24 * 3600 * 1000).toISOString();
     scheduleRepo.upsertSchedule(db, {
       question_id: row.id,

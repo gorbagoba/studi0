@@ -40,6 +40,15 @@ function renderSetupSection(body: CourseSetupBody): string {
         body.learningStyle
       ] ?? '',
     ),
+    line(
+      'Pace',
+      {
+        long: 'Long-term mastery — semester or more to the exam',
+        medium: 'Medium — about half a semester to the exam',
+        cram: 'Cram — exam imminent, days not weeks',
+        '': '',
+      }[body.pace] ?? '',
+    ),
     line('Things the teacher must know', body.notesToTeacher),
   ].filter((l) => l !== null);
   const inner = bullets.length ? '\n' + bullets.join('\n') + '\n' : '\n(no answers given — run the onboarding interview)\n';

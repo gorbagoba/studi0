@@ -70,7 +70,7 @@ export function setKeyStatus(db: Db, id: string, status: Question['keyStatus']):
 export function listQuestions(
   db: Db,
   subjectId: string,
-  filter: { topic?: string; type?: Question['type'] },
+  filter: { topic?: string; type?: Question['type']; lessonId?: string },
 ): QuestionRow[] {
   const conds = ['subject_id = ?'];
   const args: string[] = [subjectId];
@@ -81,6 +81,10 @@ export function listQuestions(
   if (filter.type) {
     conds.push('type = ?');
     args.push(filter.type);
+  }
+  if (filter.lessonId) {
+    conds.push('lesson_id = ?');
+    args.push(filter.lessonId);
   }
   return db
     .prepare(`SELECT * FROM questions WHERE ${conds.join(' AND ')} ORDER BY created_at DESC`)

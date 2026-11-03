@@ -21,10 +21,12 @@ const LessonViewer = lazy(() => import('../lesson/LessonViewer').then((m) => ({ 
 const ChatPanel = lazy(() => import('../chat/ChatPanel').then((m) => ({ default: m.ChatPanel })));
 const PracticePage = lazy(() => import('../practice/PracticePage').then((m) => ({ default: m.PracticePage })));
 const CourseSetupForm = lazy(() => import('./CourseSetupForm').then((m) => ({ default: m.CourseSetupForm })));
+const SubjectHome = lazy(() => import('./SubjectHome').then((m) => ({ default: m.SubjectHome })));
 
 const TAB_FALLBACK = <p className="muted">Loading…</p>;
 
 const TABS: { id: Tab; label: string }[] = [
+  { id: 'overview', label: 'Overview' },
   { id: 'material', label: 'Material' },
   { id: 'graph', label: 'Graph' },
   { id: 'lessons', label: 'Lessons' },
@@ -92,6 +94,11 @@ export function SubjectPage({ subjectId }: { subjectId: ID }) {
               </button>
             ))}
           </nav>
+          {tab === 'overview' && (
+            <Suspense fallback={TAB_FALLBACK}>
+              <SubjectHome subjectId={subjectId} version={v.lesson} />
+            </Suspense>
+          )}
           {tab === 'setup' && (
             <Suspense fallback={TAB_FALLBACK}>
               <CourseSetupForm subjectId={subjectId} />

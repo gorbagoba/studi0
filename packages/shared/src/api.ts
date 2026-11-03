@@ -130,6 +130,8 @@ export const lessonSchema = z.object({
   nodeTags: z.array(z.string()),
   createdAt: isoSchema,
   updatedAt: isoSchema,
+  /** set when the student passed the lesson review (null until then) */
+  reviewedAt: isoSchema.nullable(),
 });
 export type Lesson = z.infer<typeof lessonSchema>;
 
@@ -241,6 +243,8 @@ export const courseSetupBodySchema = z.object({
   weakTopics: z.string().max(1000).default(''),
   hoursPerWeek: z.string().max(30).default(''),
   learningStyle: z.enum(['', 'examples-first', 'theory-first', 'mixed']).default(''),
+  /** study horizon: drives the teacher's mode (long-term mastery / medium / cram) */
+  pace: z.enum(['', 'long', 'medium', 'cram']).default(''),
   notesToTeacher: z.string().max(3000).default(''),
 });
 export type CourseSetupBody = z.infer<typeof courseSetupBodySchema>;
@@ -304,7 +308,25 @@ export const generateBodySchema = z.object({
 });
 export type GenerateQuestionsRequest = z.infer<typeof generateBodySchema>;
 
-export const answerBodySchema = z.object({ answer: z.string().min(1) });
+export const answerBodySchema = z.object({
+  answer: z.string().min(1),
+  /** hypercorrection: confidence captured BEFORE the verdict is revealed */
+  confidence: z.enum(['high', 'medium', 'low']).optional(),
+});
+
+/** Lesson review: evaluate the latest attempts on a lesson's bank questions. */
+export const lessonReviewResponseSchema = z.object({
+  verdict: z.enum(['pass', 'retry']),
+  results: z.array(
+    z.object({
+      questionId: idSchema,
+      verdict: z.string(),
+      answered: z.boolean(),
+    }),
+  ),
+  reviewedAt: isoSchema.nullable(),
+});
+export type LessonReviewResponse = z.infer<typeof lessonReviewResponseSchema>;
 
 export const markdownBodySchema = z.object({ markdown: z.string() });
 

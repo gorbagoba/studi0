@@ -14,10 +14,14 @@ export function LessonsList({
 }) {
   const { openLesson } = useApp();
   const lessons = useLessons(subjectId, version);
+  const reviewed = lessons.data?.filter((l) => l.reviewedAt !== null).length ?? 0;
+  const total = lessons.data?.length ?? 0;
 
   return (
     <nav aria-labelledby="lessons-title" className="lessons-list">
-      <h3 id="lessons-title">Lessons</h3>
+      <h3 id="lessons-title">
+        Lessons{total > 0 ? <span className="muted"> — {reviewed}/{total} reviewed</span> : null}
+      </h3>
       {lessons.loading && <p className="muted">Loading…</p>}
       {lessons.error !== null && <ErrorBanner message={lessons.error} />}
       {lessons.data !== null &&
@@ -28,7 +32,14 @@ export function LessonsList({
             {lessons.data.map((l) => (
               <div key={l.id} role="listitem" className="lesson-row-wrap">
                 <button type="button" className="lesson-row" onClick={() => openLesson(l.path)}>
-                  <span className="lesson-row-title">{l.title}</span>
+                  <span className="lesson-row-title">
+                    {l.reviewedAt !== null && (
+                      <span className="review-tick" title={`Reviewed ${formatDateTime(l.reviewedAt)}`}>
+                        ✓
+                      </span>
+                    )}
+                    {l.title}
+                  </span>
                   <span className="lesson-row-meta">
                     updated {formatDateTime(l.updatedAt)}
                     {l.nodeTags.length > 0 ? ` · ${l.nodeTags.length} graph topics` : ''}

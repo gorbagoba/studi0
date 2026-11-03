@@ -64,7 +64,7 @@ export function makeConfig(dataDir?: string): Config {
     maxConcurrentJobs: 2,
     rotateThreshold: 24,
     rotateBytes: 60_000,
-    ladder: [1, 3, 7],
+    ladder: [1, 3, 7, 14, 30], // successive relearning: expanding rungs (Cepeda optimal-gap); a rung advances per 3 consecutive corrects
     allowedExt: ['.pdf', '.md'],
     maxFileBytes: 200 * 1024 * 1024,
     ocPort: Number(process.env.OC_PORT ?? 44096),

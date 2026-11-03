@@ -11,6 +11,7 @@ const EMPTY: CourseSetupBody = {
   weakTopics: '',
   hoursPerWeek: '',
   learningStyle: '',
+  pace: '',
   notesToTeacher: '',
 };
 
@@ -140,6 +141,15 @@ export function CourseSetupForm({ subjectId }: { subjectId: string }) {
                 <option value="examples-first">Examples first, then theory</option>
                 <option value="theory-first">Theory first, then examples</option>
                 <option value="mixed">Mixed</option>
+              </select>
+            </label>
+            <label className="field">
+              Study horizon (sets the teacher&apos;s mode)
+              <select value={body.pace} onChange={(e) => set('pace')(e.target.value)}>
+                <option value="">—</option>
+                <option value="long">Long-term mastery — semester or more</option>
+                <option value="medium">Medium — about half a semester</option>
+                <option value="cram">Cram — exam imminent</option>
               </select>
             </label>
           </div>

@@ -23,6 +23,7 @@ export function QuizRunner({
 }) {
   const [index, setIndex] = useState(0);
   const [answer, setAnswer] = useState('');
+  const [pending, setPending] = useState<string | null>(null); // answer awaiting confidence
   const [result, setResult] = useState<AnswerResponse | null>(null);
   const [reveal, setReveal] = useState<QuestionKey | null>(null);
   const [blocked, setBlocked] = useState<string | null>(null);
@@ -33,6 +34,7 @@ export function QuizRunner({
 
   useEffect(() => {
     setAnswer('');
+    setPending(null);
     setResult(null);
     setReveal(null);
     setBlocked(null);
@@ -45,10 +47,17 @@ export function QuizRunner({
   async function submit(e: FormEvent): Promise<void> {
     e.preventDefault();
     if (answer.trim() === '') return;
+    // two-step submit: capture confidence BEFORE the verdict is revealed
+    // (hypercorrection — confident misses corrected with feedback stick best)
+    setPending(answer);
+  }
+
+  async function submitWith(confidence: 'high' | 'medium' | 'low'): Promise<void> {
     setBusy(true);
     setError(null);
     try {
-      setResult(await answerQuestion(question.id, answer));
+      setResult(await answerQuestion(question.id, pending ?? answer, confidence));
+      setPending(null);
       onAnswered?.();
     } catch (err) {
       setError(displayError(err));
@@ -129,7 +138,7 @@ export function QuizRunner({
                   value={o.id}
                   checked={answer === o.id}
                   onChange={() => setAnswer(o.id)}
-                  disabled={result !== null}
+                  disabled={result !== null || pending !== null}
                 />
                 <label htmlFor={`opt-${question.id}-${o.id}`}>{o.text}</label>
               </div>
@@ -146,20 +155,40 @@ export function QuizRunner({
               onChange={(e) => setAnswer(e.target.value)}
               rows={question.type === 'code' ? 8 : 3}
               className={question.type === 'code' ? 'code-input' : undefined}
-              disabled={result !== null}
+              disabled={result !== null || pending !== null}
             />
           </>
         )}
         {result === null ? (
-          <form onSubmit={(e) => void submit(e)} className="btn-row">
-            <button
-              type="submit"
-              className="btn-primary"
-              disabled={busy || answer.trim() === ''}
-            >
-              Submit answer
-            </button>
-          </form>
+          pending === null ? (
+            <form onSubmit={(e) => void submit(e)} className="btn-row">
+              <button
+                type="submit"
+                className="btn-primary"
+                disabled={busy || answer.trim() === ''}
+              >
+                Submit answer
+              </button>
+            </form>
+          ) : (
+            <div className="confidence-row" role="group" aria-label="How sure are you?">
+              <p className="muted">Before I show the verdict — how sure are you?</p>
+              <div className="btn-row">
+                <button className="btn" disabled={busy} onClick={() => void submitWith('high')}>
+                  Confident
+                </button>
+                <button className="btn" disabled={busy} onClick={() => void submitWith('medium')}>
+                  Somewhat sure
+                </button>
+                <button className="btn" disabled={busy} onClick={() => void submitWith('low')}>
+                  Guessing
+                </button>
+                <button className="btn" disabled={busy} onClick={() => setPending(null)}>
+                  Edit answer
+                </button>
+              </div>
+            </div>
+          )
         ) : (
           <div className="quiz-result" role="status">
             <Badge

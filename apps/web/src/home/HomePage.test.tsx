@@ -104,7 +104,7 @@ describe('HomePage dashboard', () => {
     renderHome();
     const duePanel = await screen.findByRole('region', { name: 'Due today' });
     fireEvent.click(within(duePanel).getByRole('button', { name: /QA Heaps/ }));
-    await waitFor(() => expect(screen.getByTestId('probe').textContent).toBe('s1:material:-'));
+    await waitFor(() => expect(screen.getByTestId('probe').textContent).toBe('s1:overview:-'));
 
     // remount for the lesson navigation check
     cleanup();
