@@ -87,6 +87,7 @@ describe('SubjectPage job state', () => {
             }),
           );
         if (url.endsWith('/wiki')) return Promise.resolve(jsonResponse({ pages: [] }));
+        if (url.endsWith('/lessons')) return Promise.resolve(jsonResponse([]));
         return Promise.resolve(jsonResponse(subjectDetail));
       }),
     );

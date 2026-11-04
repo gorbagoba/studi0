@@ -1765,5 +1765,7 @@ dl.diag-list dd.diag-status {
 .review-verdict { margin-top: 0.75rem; display: grid; gap: 0.4rem; }
 .review-verdict.pass { border-left: 3px solid var(--ok, #4ade80); padding-left: 0.75rem; }
 .review-verdict.retry { border-left: 3px solid var(--warn, #fbbf24); padding-left: 0.75rem; }
+.review-ok { color: var(--ok, #4ade80); }
+.review-feedback { color: var(--warn, #fbbf24); }
 .continue-row { flex-wrap: wrap; align-items: stretch; }
 .subject-home .panel h3 .muted { font-weight: 400; }

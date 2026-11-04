@@ -314,6 +314,20 @@ export const answerBodySchema = z.object({
   confidence: z.enum(['high', 'medium', 'low']).optional(),
 });
 
+/** One-shot lesson review submission: every answer in a single form send. */
+export const lessonReviewSubmitSchema = z.object({
+  answers: z
+    .array(
+      z.object({
+        questionId: idSchema,
+        answer: z.string().min(1),
+        confidence: z.enum(['high', 'medium', 'low']).optional(),
+      }),
+    )
+    .max(50),
+});
+export type LessonReviewSubmit = z.infer<typeof lessonReviewSubmitSchema>;
+
 /** Lesson review: evaluate the latest attempts on a lesson's bank questions. */
 export const lessonReviewResponseSchema = z.object({
   verdict: z.enum(['pass', 'retry']),
@@ -322,6 +336,8 @@ export const lessonReviewResponseSchema = z.object({
       questionId: idSchema,
       verdict: z.string(),
       answered: z.boolean(),
+      /** teacher/grading feedback for this answer (absent when unanswered) */
+      feedback: z.string().optional(),
     }),
   ),
   reviewedAt: isoSchema.nullable(),

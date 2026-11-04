@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ID, LessonContent } from '@studi0/shared';
 import { displayError, getLessonContent } from '../api/client';
 import { useLessons } from '../api/hooks';
@@ -8,7 +8,6 @@ import { formatDateTime } from '../lib/format';
 import { ChatPanel } from '../chat/ChatPanel';
 
 const POLL_MS = 2500;
-const LessonReview = lazy(() => import('./LessonReview').then((m) => ({ default: m.LessonReview })));
 
 export function LessonViewer({
   subjectId,
@@ -24,11 +23,10 @@ export function LessonViewer({
   onLessonSaved?: () => void;
 }) {
   const lessons = useLessons(subjectId, version);
-  const { openLesson } = useApp();
+  const { openLesson, openReview } = useApp();
   const lesson = lessons.data?.find((l) => l.path === path) ?? null;
   const [content, setContent] = useState<LessonContent | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [reviewOpen, setReviewOpen] = useState(false);
   const seen = useRef<string | null>(null);
 
   // remember the last viewed lesson per subject (overview "continue" card)
@@ -123,11 +121,10 @@ export function LessonViewer({
           </div>
           {content !== null && <span className="muted">updated {formatDateTime(content.updatedAt)}</span>}
           <button
-            className={`btn${reviewOpen ? ' active' : ''}`}
-            onClick={() => setReviewOpen((o) => !o)}
+            className="btn"
+            onClick={() => openReview(path)}
             disabled={lesson === null}
             title={lesson === null ? 'Available once the lesson is indexed' : 'Review this lesson with the teacher'}
-            aria-pressed={reviewOpen}
           >
             {lesson?.reviewedAt != null ? '✓ Reviewed' : 'Lesson review'}
           </button>
@@ -168,24 +165,10 @@ export function LessonViewer({
         </div>
       </div>
       <aside className="lesson-chat">
-        {reviewOpen && lesson !== null && (
-          <Suspense fallback={<p className="muted">Loading review…</p>}>
-            <LessonReview
-              subjectId={subjectId}
-              lessonId={lesson.id}
-              onReviewed={() => {
-                setReviewOpen(false);
-                onLessonSaved?.();
-              }}
-            />
-          </Suspense>
-        )}
         {lessons.loading ? (
           <p className="muted">Loading…</p>
-        ) : lesson !== null && !reviewOpen ? (
-          <ChatPanel subjectId={subjectId} lessonId={lesson.id} onLessonSaved={onLessonSaved} />
         ) : lesson !== null ? (
-          <p className="muted">Chat is paused while the review is open — close it to keep asking.</p>
+          <ChatPanel subjectId={subjectId} lessonId={lesson.id} onLessonSaved={onLessonSaved} />
         ) : (
           <p className="muted">
             This lesson is not indexed yet, so lesson-scoped chat is unavailable. It appears here

@@ -9,6 +9,7 @@ import type {
   Group,
   Health,
   LessonReviewResponse,
+  LessonReviewSubmit,
   MergeResponse,
   OpencodeHealth,
   DueResponse,
@@ -253,8 +254,11 @@ export const answerQuestion = (
 ): Promise<AnswerResponse> =>
   send<AnswerResponse>('POST', `/api/questions/${questionId}/answer`, confidence ? { answer, confidence } : { answer });
 
-export const submitLessonReview = (lessonId: ID): Promise<LessonReviewResponse> =>
-  send<LessonReviewResponse>('POST', `/api/lessons/${lessonId}/review`, {});
+export const submitLessonReview = (
+  lessonId: ID,
+  answers: LessonReviewSubmit['answers'],
+): Promise<LessonReviewResponse> =>
+  send<LessonReviewResponse>('POST', `/api/lessons/${lessonId}/review`, { answers });
 
 export const verifyKey = (questionId: ID): Promise<VerifyKeyResponse> =>
   send<VerifyKeyResponse>('POST', `/api/questions/${questionId}/verify-key`);

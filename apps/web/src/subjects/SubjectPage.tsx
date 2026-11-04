@@ -18,6 +18,7 @@ const ReportView = lazy(() => import('../graph/ReportView').then((m) => ({ defau
 const WikiEditor = lazy(() => import('../graph/WikiEditor').then((m) => ({ default: m.WikiEditor })));
 const LessonsList = lazy(() => import('../lesson/LessonsList').then((m) => ({ default: m.LessonsList })));
 const LessonViewer = lazy(() => import('../lesson/LessonViewer').then((m) => ({ default: m.LessonViewer })));
+const ReviewPage = lazy(() => import('../lesson/ReviewPage').then((m) => ({ default: m.ReviewPage })));
 const ChatPanel = lazy(() => import('../chat/ChatPanel').then((m) => ({ default: m.ChatPanel })));
 const PracticePage = lazy(() => import('../practice/PracticePage').then((m) => ({ default: m.PracticePage })));
 const CourseSetupForm = lazy(() => import('./CourseSetupForm').then((m) => ({ default: m.CourseSetupForm })));
@@ -36,7 +37,7 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 export function SubjectPage({ subjectId }: { subjectId: ID }) {
-  const { tab, setTab, lessonPath, openLesson, closeLesson } = useApp();
+  const { tab, setTab, lessonPath, reviewLessonPath, openLesson, closeLesson } = useApp();
   const subject = useSubject(subjectId);
   const subjectRef = useRef(subject);
   subjectRef.current = subject;
@@ -142,18 +143,27 @@ export function SubjectPage({ subjectId }: { subjectId: ID }) {
           )}
           {tab === 'lessons' && (
             <Suspense fallback={TAB_FALLBACK}>
-              <div className={`lessons-pane${lessonPath !== null ? ' lesson-open' : ''}`}>
-                {lessonPath === null && <LessonsList subjectId={subjectId} version={v.lesson} />}
-                {lessonPath !== null && (
-                  <LessonViewer
-                    subjectId={subjectId}
-                    path={lessonPath}
-                    version={v.lesson}
-                    onClosed={closeLesson}
-                    onLessonSaved={() => setV((x) => ({ ...x, lesson: x.lesson + 1 }))}
-                  />
-                )}
-              </div>
+              {reviewLessonPath !== null ? (
+                <ReviewPage
+                  subjectId={subjectId}
+                  path={reviewLessonPath}
+                  version={v.lesson}
+                  onLessonSaved={() => setV((x) => ({ ...x, lesson: x.lesson + 1 }))}
+                />
+              ) : (
+                <div className={`lessons-pane${lessonPath !== null ? ' lesson-open' : ''}`}>
+                  {lessonPath === null && <LessonsList subjectId={subjectId} version={v.lesson} />}
+                  {lessonPath !== null && (
+                    <LessonViewer
+                      subjectId={subjectId}
+                      path={lessonPath}
+                      version={v.lesson}
+                      onClosed={closeLesson}
+                      onLessonSaved={() => setV((x) => ({ ...x, lesson: x.lesson + 1 }))}
+                    />
+                  )}
+                </div>
+              )}
             </Suspense>
           )}
           {tab === 'chat' && (
