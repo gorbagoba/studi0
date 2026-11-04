@@ -307,3 +307,44 @@ describe('successive relearning + hypercorrection (research wave)', () => {
     expect(row.confidence).toBe('high');
   });
 });
+
+describe('question deletion', () => {
+  it('deletes the question and its attempt + schedule rows', async () => {
+    h = await makeHarness();
+    patchOc(h);
+    const id = await createSubject('P7');
+    h.ctx.oneshot = stubOneshot('```json\n' + JSON.stringify(goodQuiz) + '\n```');
+    const questions = (
+      await h.app.inject({
+        method: 'POST',
+        url: `/api/subjects/${id}/questions/generate`,
+        payload: { topic: 'heaps', count: 2 },
+      })
+    ).json();
+    const [q1, q2] = questions;
+
+    const del = await h.app.inject({ method: 'DELETE', url: `/api/questions/${q1.id}` });
+    expect(del.statusCode).toBe(200);
+    expect(del.json()).toEqual({ ok: true });
+    const list = (await h.app.inject({ method: 'GET', url: `/api/subjects/${id}/questions` })).json();
+    expect(list).toHaveLength(1);
+    const due = (await h.app.inject({ method: 'GET', url: `/api/subjects/${id}/practice/due` })).json();
+    expect(due.questions).toHaveLength(1);
+
+    // a question that has an attempt: its attempts row is cleared with it
+    h.ctx.oneshot = stubOneshot('```json\n{"verdict":"incorrect","feedback":"nope"}\n```');
+    const answered = await h.app.inject({
+      method: 'POST',
+      url: `/api/questions/${q2.id}/answer`,
+      payload: { answer: 'it is fast' },
+    });
+    expect(answered.statusCode).toBe(200);
+    const del2 = await h.app.inject({ method: 'DELETE', url: `/api/questions/${q2.id}` });
+    expect(del2.statusCode).toBe(200);
+    expect(h.ctx.db.prepare('SELECT COUNT(*) AS n FROM attempts WHERE question_id = ?').get(q2.id)).toEqual({ n: 0 });
+
+    const missing = await h.app.inject({ method: 'DELETE', url: '/api/questions/unknown-id' });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json().error.code).toBe('QUESTION_NOT_FOUND');
+  });
+});

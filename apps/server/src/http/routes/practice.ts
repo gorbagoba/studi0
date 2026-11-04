@@ -94,6 +94,12 @@ export async function registerPracticeRoutes(app: FastifyInstance, ctx: Ctx): Pr
     return { key: JSON.parse(row.key_json) };
   });
 
+  app.delete('/api/questions/:id', async (req) => {
+    const id = (req.params as { id: string }).id;
+    requireQuestion(db, id);
+    return { ok: questionsRepo.deleteQuestion(db, id) };
+  });
+
   app.get('/api/subjects/:id/practice/due', async (req) => {
     const subject = requireSubject(db, (req.params as { id: string }).id);
     const now = new Date().toISOString();

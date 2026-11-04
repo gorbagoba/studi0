@@ -266,6 +266,10 @@ export const verifyKey = (questionId: ID): Promise<VerifyKeyResponse> =>
 export const revealKey = (questionId: ID): Promise<RevealKeyResponse> =>
   send<RevealKeyResponse>('POST', `/api/questions/${questionId}/reveal-key`);
 
+// also deletes the question's attempts and review schedule; 404 for an unknown id
+export const deleteQuestion = (id: ID): Promise<{ ok: boolean }> =>
+  send<{ ok: boolean }>('DELETE', `/api/questions/${id}`);
+
 export const getDue = (id: ID): Promise<DueResponse> =>
   api<DueResponse>(`/api/subjects/${id}/practice/due`);
 

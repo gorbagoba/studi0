@@ -2,7 +2,8 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import type { ID, Question, QuestionType } from '@studi0/shared';
 import { useDue, useQuestions, useStats } from '../api/hooks';
-import { displayError, generateQuestions } from '../api/client';
+import { deleteQuestion, displayError, generateQuestions } from '../api/client';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { EmptyState } from '../components/EmptyState';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { Badge } from '../components/Badge';
@@ -28,6 +29,9 @@ export function PracticePage({ subjectId, version }: { subjectId: ID; version: n
   const [genDifficulty, setGenDifficulty] = useState<'mixed' | 'easy' | 'medium' | 'hard'>('mixed');
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
+  const [deleteFor, setDeleteFor] = useState<Question | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   async function generate(e: FormEvent): Promise<void> {
     e.preventDefault();
@@ -44,6 +48,21 @@ export function PracticePage({ subjectId, version }: { subjectId: ID; version: n
   }
 
   const refresh = () => setLocalV((x) => x + 1);
+
+  async function confirmDelete(): Promise<void> {
+    if (deleteFor === null) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteQuestion(deleteFor.id);
+      setDeleteFor(null);
+      refresh();
+    } catch (err) {
+      setDeleteError(displayError(err));
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   return (
     <div className="stack">
@@ -168,14 +187,40 @@ export function PracticePage({ subjectId, version }: { subjectId: ID; version: n
                       {q.source} · {formatDateTime(q.createdAt)}
                     </span>
                   </div>
-                  <button className="btn btn-small" onClick={() => setQueue([q])}>
-                    Practice
-                  </button>
+                  <div className="btn-row">
+                    <button className="btn btn-small" onClick={() => setQueue([q])}>
+                      Practice
+                    </button>
+                    <button
+                      className="btn btn-small"
+                      disabled={deleting}
+                      onClick={() => {
+                        setDeleteError(null);
+                        setDeleteFor(q);
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
           ))}
       </section>
+      <ConfirmDialog
+        open={deleteFor !== null}
+        title="Delete this question?"
+        body="Deleting also removes its attempt history and review schedule."
+        confirmLabel="Delete"
+        danger
+        busy={deleting}
+        error={deleteError}
+        onConfirm={() => void confirmDelete()}
+        onClose={() => {
+          setDeleteFor(null);
+          setDeleteError(null);
+        }}
+      />
     </div>
   );
 }

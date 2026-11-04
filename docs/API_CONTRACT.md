@@ -277,6 +277,9 @@ Pre-stream JSON errors (before any SSE byte): `400 VALIDATION` · `404 SESSION_N
 `POST /api/questions/:id/reveal-key` — **the gate**: only a verified key is revealed (AC19).
 → `200 { key: QuestionKey }` · `404 QUESTION_NOT_FOUND` · `409 KEY_NOT_VERIFIED { details: { keyStatus: KeyStatus } }`
 
+`DELETE /api/questions/:id` — hard delete: clears the question with its attempts and schedule rows (practice history for it is gone).
+→ `200 { ok: true }` · `404 QUESTION_NOT_FOUND`
+
 `GET /api/subjects/:id/practice/due` — due-today queue (new questions are due immediately; no background scheduler).
 → `200 { date: ISO; questions: Question[] }`
 

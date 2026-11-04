@@ -63,6 +63,21 @@ export function getQuestion(db: Db, id: string): QuestionRow | null {
   return (db.prepare('SELECT * FROM questions WHERE id = ?').get(id) ?? null) as unknown as QuestionRow | null;
 }
 
+export function deleteQuestion(db: Db, id: string): boolean {
+  // attempts/schedule have no ON DELETE CASCADE and FKs are on, so they must go first
+  db.exec('BEGIN');
+  try {
+    db.prepare('DELETE FROM attempts WHERE question_id = ?').run(id);
+    db.prepare('DELETE FROM schedule WHERE question_id = ?').run(id);
+    const res = db.prepare('DELETE FROM questions WHERE id = ?').run(id);
+    db.exec('COMMIT');
+    return res.changes > 0;
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+}
+
 export function setKeyStatus(db: Db, id: string, status: Question['keyStatus']): void {
   db.prepare('UPDATE questions SET key_status = ? WHERE id = ?').run(status, id);
 }
