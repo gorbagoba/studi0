@@ -1,8 +1,10 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import type { ID, Job } from '@studi0/shared';
 import { openSubjectEvents } from '../api/sse';
+import type { SetupEvent } from '../api/sse';
 import { useSubject } from '../api/hooks';
 import { useApp } from '../state/app';
+import { useToast } from '../components/Toast';
 
 import type { Tab } from '../state/app';
 import { Badge } from '../components/Badge';
@@ -44,6 +46,7 @@ export function SubjectPage({ subjectId }: { subjectId: ID }) {
   const [liveJob, setLiveJob] = useState<Job | null>(null);
   const [fileV, setFileV] = useState(0);
   const [v, setV] = useState({ graph: 0, lesson: 0, questions: 0 });
+  const { show } = useToast();
 
   useEffect(
     () =>
@@ -58,8 +61,14 @@ export function SubjectPage({ subjectId }: { subjectId: ID }) {
         },
         onLesson: () => setV((s) => ({ ...s, lesson: s.lesson + 1 })),
         onQuestions: () => setV((s) => ({ ...s, questions: s.questions + 1 })),
+        onSetup: (ev: SetupEvent) => {
+          if (ev.state === 'started') show('Teacher is generating all course lessons…');
+          else if (ev.state === 'done')
+            show(`✓ Course lessons ready — ${ev.lessons ?? ''} new lesson(s) in Lessons`, 'ok');
+          else show('Lesson generation failed — check the server log', 'error');
+        },
       }),
-    [subjectId],
+    [subjectId, show],
   );
 
   const s = subject.data;

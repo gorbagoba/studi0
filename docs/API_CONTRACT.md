@@ -101,6 +101,9 @@ Citation markers (`【file.pdf · p12】`) are **inline in `ChatMessage.text`** 
 `GET /api/health`
 → `200 { ok: true; opencode: { running: boolean; pid: ID | null; port: number; healthy: boolean } }`
 
+`GET /api/agent/status` — live agent monitor: headless course-setup runs in flight + non-terminal pipeline jobs.
+→ `200 { busy: boolean; task: { kind: "lesson-generation"; subjectId: ID; subjectName: string; startedAt: ISO } | null; jobs: { id: ID; kind: JobKind; subject: string; status: "queued" | "running" | "cancelling"; done: number; total: number }[] }` (`task` = first in-flight setup run; `jobs` mirror the health jobs list)
+
 ### Subjects
 
 `GET /api/subjects`
@@ -185,6 +188,7 @@ No files are copied or moved (AC1).
 - `event: job` → `Job` (full snapshot on every transition)
 - `event: log` → `{ line: string; at: ISO }` (one pipeline build-log line, same text as written to `graphify-out/build.log`; `at` is the server timestamp)
 - `event: lesson` → `Lesson` (written during chat / auto-indexed)
+- `event: setup` → `{ state: "started" | "done" | "failed"; subjectId: ID; subjectName: string; startedAt?: ISO; lessons?: number; error?: string }` (headless course-setup run lifecycle: `started` on launch, `done` after indexing with the indexed `lessons` count, `failed` if the teacher run throws)
 - `event: questions` → `{ subjectId: ID; questions: Question[] }` (auto-deposit / quiz block landed)
 - heartbeat comments only otherwise
 

@@ -17,11 +17,20 @@ interface SubjectLogEvent {
   at: string;
 }
 
+/** Course-setup progress event pushed on the subject stream (`setup` event). */
+export interface SetupEvent {
+  state: 'started' | 'done' | 'failed';
+  subjectId: string;
+  subjectName: string;
+  lessons?: number;
+}
+
 export interface SubjectEventHandlers {
   onJob?: (job: Job) => void;
   onLesson?: (lesson: Lesson) => void;
   onQuestions?: (payload: SubjectQuestionsEvent) => void;
   onLog?: (event: SubjectLogEvent) => void;
+  onSetup?: (payload: SetupEvent) => void;
 }
 
 /** Opens the subject SSE stream; returns a cleanup that closes it. */
@@ -37,6 +46,9 @@ export function openSubjectEvents(subjectId: ID, handlers: SubjectEventHandlers)
   es.addEventListener('log', (e) =>
     handlers.onLog?.(JSON.parse((e as MessageEvent).data) as SubjectLogEvent),
   );
+  es.addEventListener('setup', (e) =>
+    handlers.onSetup?.(JSON.parse((e as MessageEvent).data) as SetupEvent),
+  );
   return () => es.close();
 }
 
@@ -49,6 +61,7 @@ export interface ChatStreamHandlers {
   onRotated?: (payload: { newSessionId: ID; summaryPath: string }) => void;
   onDone?: (payload: { messageCount: number }) => void;
   onError?: (err: ApiErrorPayload['error']) => void;
+  onSetup?: (payload: SetupEvent) => void;
 }
 
 /** Parses one SSE frame ("event: <name>\ndata: <json>"). Returns null for comments/empty frames. */
@@ -116,6 +129,9 @@ export async function postChatStream(
         break;
       case 'error':
         handlers.onError?.((data as ApiErrorPayload).error);
+        break;
+      case 'setup':
+        handlers.onSetup?.(data as SetupEvent);
         break;
     }
   };

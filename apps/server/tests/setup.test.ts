@@ -149,3 +149,43 @@ describe('setup run fan-out', () => {
     expect(seenPrompt).toContain('COURSE SETUP RUN');
   });
 });
+
+describe('setup run SSE + agent status', () => {
+  it('emits setup started/done and the status endpoint tracks the run', async () => {
+    h = await makeHarness();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    h.ctx.teacherRun = async () => {
+      await gate;
+      return 'ok';
+    };
+    const { id, root } = await createSubject('SSE1');
+    // record real bus traffic — same object the SSE stream fans out from
+    const setupEvents: Array<Record<string, unknown>> = [];
+    const unsub = h.ctx.events.subscribe(id, (event, data) => {
+      if (event === 'setup') setupEvents.push(data as Record<string, unknown>);
+    });
+
+    const res = await h.app.inject({ method: 'POST', url: `/api/subjects/${id}/setup`, payload: { courseIdentity: 'X' } });
+    expect(res.json().generating).toBe(true);
+    expect(setupEvents).toEqual([{ state: 'started', subjectId: id, subjectName: 'SSE1', startedAt: expect.any(String) }]);
+
+    // in flight: agent status shows the lesson-generation task
+    const busy = await h.app.inject({ method: 'GET', url: '/api/agent/status' });
+    expect(busy.json()).toMatchObject({
+      busy: true,
+      task: { kind: 'lesson-generation', subjectId: id, subjectName: 'SSE1' },
+    });
+
+    // a lesson written mid-run gets indexed when the run settles
+    await mkdir(path.join(root, 'lessons'), { recursive: true });
+    await writeFile(path.join(root, 'lessons', '0001.html'), '<html><title>L1</title></html>');
+    release();
+    await new Promise((r) => setTimeout(r, 50)); // let the fire-and-forget settle
+    expect(setupEvents[1]).toEqual({ state: 'done', subjectId: id, subjectName: 'SSE1', lessons: 1 });
+
+    const idle = await h.app.inject({ method: 'GET', url: '/api/agent/status' });
+    expect(idle.json()).toMatchObject({ busy: false, task: null });
+    unsub();
+  });
+});

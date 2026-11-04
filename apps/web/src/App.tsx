@@ -3,6 +3,7 @@ import { Sidebar } from './subjects/Sidebar';
 import { SubjectPage } from './subjects/SubjectPage';
 import { SettingsPage } from './settings/SettingsPage';
 import { AppProvider, useApp } from './state/app';
+import { ToastProvider } from './components/Toast';
 
 function Shell() {
   const { subjectId, settingsOpen } = useApp();
@@ -25,7 +26,9 @@ function Shell() {
 export default function App() {
   return (
     <AppProvider>
-      <Shell />
+      <ToastProvider>
+        <Shell />
+      </ToastProvider>
     </AppProvider>
   );
 }

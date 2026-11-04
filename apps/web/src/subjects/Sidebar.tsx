@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useGroups, useSubjects } from '../api/hooks';
 import {
   createGroup,
@@ -6,12 +6,14 @@ import {
   deleteSubject,
   deleteSubjectFiles,
   displayError,
+  getAgentStatus,
   getHealth,
   mergeSubject,
   renameGroup,
   renameSubject,
   shutdownServer,
 } from '../api/client';
+import type { AgentStatus } from '../api/client';
 import type { Group, Subject } from '@studi0/shared';
 import { useApp } from '../state/app';
 import { AddSubjectDialog } from './AddSubjectDialog';
@@ -510,25 +512,28 @@ export function Sidebar() {
         )}
       </nav>
       {subjects.error !== null && <ErrorBanner message={subjects.error} />}
-      <div className="sidebar-footer">
-        <button
-          type="button"
-          className="icon-btn"
-          onClick={() => setSettingsOpen(true)}
-          aria-label="Settings & diagnostics"
-          title="Settings & diagnostics — probe servers, restart the teacher, cancel stuck jobs"
-        >
-          <GearIcon />
-        </button>
-        <button
-          type="button"
-          className="icon-btn icon-danger"
-          onClick={() => void askShutdown()}
-          aria-label="Shut down studi0"
-          title="Shut down — cancels running builds, stops the teacher and API"
-        >
-          <PowerIcon />
-        </button>
+      <div className="sidebar-bottom">
+        <AgentSection />
+        <div className="sidebar-footer">
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={() => setSettingsOpen(true)}
+            aria-label="Settings & diagnostics"
+            title="Settings & diagnostics — probe servers, restart the teacher, cancel stuck jobs"
+          >
+            <GearIcon />
+          </button>
+          <button
+            type="button"
+            className="icon-btn icon-danger"
+            onClick={() => void askShutdown()}
+            aria-label="Shut down studi0"
+            title="Shut down — cancels running builds, stops the teacher and API"
+          >
+            <PowerIcon />
+          </button>
+        </div>
       </div>
       <AddSubjectDialog
         open={addOpen}
@@ -664,5 +669,88 @@ function CopyRestartCommand() {
     >
       {copied ? 'Copied' : 'Copy restart command'}
     </button>
+  );
+}
+
+const AGENT_KIND_LABELS: Record<string, string> = {
+  'lesson-generation': 'Generating course lessons',
+  build: 'Graph build',
+  update: 'Graph build',
+  recluster: 'Graph build',
+  extract: 'Graph build',
+};
+
+function kindLabel(kind: string): string {
+  return AGENT_KIND_LABELS[kind] ?? kind;
+}
+
+/** Best-effort agent status: polls every 3s, never surfaces errors (status is informational). */
+function AgentSection() {
+  const [status, setStatus] = useState<AgentStatus | null>(null);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    const poll = (): void => {
+      getAgentStatus()
+        .then((s) => {
+          if (alive) setStatus(s);
+        })
+        .catch(() => undefined);
+    };
+    poll();
+    const t = window.setInterval(poll, 3000);
+    return () => {
+      alive = false;
+      window.clearInterval(t);
+    };
+  }, []);
+
+  const task = status?.task ?? null;
+  const busy = status?.busy === true && task !== null;
+  const jobs = status?.jobs ?? [];
+
+  let started = '';
+  if (busy && task !== null) {
+    const ms = Date.now() - new Date(task.startedAt).getTime();
+    if (Number.isFinite(ms)) started = `started ${Math.max(1, Math.round(ms / 60000))}m ago`;
+  }
+
+  return (
+    <div className="agent-section">
+      <button
+        type="button"
+        className="agent-btn"
+        aria-expanded={open}
+        aria-haspopup="true"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className={`agent-dot${busy ? ' busy' : ''}`} aria-hidden="true" />
+        {busy && task !== null ? `Working: ${task.subjectName}` : 'Agent idle'}
+      </button>
+      {open && (
+        <div className="agent-popover">
+          <p className="agent-popover-title">Current jobs</p>
+          {busy && task !== null && (
+            <p className="agent-task">
+              {kindLabel(task.kind)} — {task.subjectName}
+              {started !== '' && <span className="muted"> ({started})</span>}
+            </p>
+          )}
+          {jobs.map((j) => (
+            <p key={j.id} className="agent-task">
+              {kindLabel(j.kind)} — {j.subject}: {j.status}
+              {j.done !== undefined && j.total !== undefined && (
+                <span className="muted">
+                  {' '}
+                  ({j.done}/{j.total})
+                </span>
+              )}
+            </p>
+          ))}
+          {!busy && jobs.length === 0 && <p className="agent-task muted">No active jobs</p>}
+        </div>
+      )}
+    </div>
   );
 }

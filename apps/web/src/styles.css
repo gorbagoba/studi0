@@ -1769,3 +1769,66 @@ dl.diag-list dd.diag-status {
 .review-feedback { color: var(--warn, #fbbf24); }
 .continue-row { flex-wrap: wrap; align-items: stretch; }
 .subject-home .panel h3 .muted { font-weight: 400; }
+
+/* ---- agent status (sidebar) + toasts ---- */
+.sidebar-bottom { margin-top: auto; } /* pins the agent section and footer together at the bottom */
+.agent-section { position: relative; }
+.agent-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.35rem 0.55rem;
+  margin-bottom: 0.4rem;
+  cursor: pointer;
+}
+.agent-btn:hover { color: var(--ink); border-color: var(--muted); }
+.agent-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line); flex-shrink: 0; }
+.agent-dot.busy { background: var(--warn); animation: agent-pulse 1.4s ease-in-out infinite; }
+@keyframes agent-pulse { 50% { opacity: 0.3; } }
+/* the section sits at the viewport bottom, so the panel opens above the button */
+.agent-popover {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+.agent-popover p { margin: 0.15rem 0; font-size: 0.85rem; }
+.agent-popover-title { color: var(--muted); font-weight: 700; }
+.toast-stack {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 1000;
+  display: grid;
+  gap: 0.5rem;
+  max-width: 24rem;
+}
+.toast {
+  padding: 0.55rem 0.8rem;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--muted);
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+.toast-ok { border-left-color: var(--ok); }
+.toast-warn { border-left-color: var(--warn); }
+.toast-error { border-left-color: var(--err); }

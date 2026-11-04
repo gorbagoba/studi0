@@ -1,6 +1,21 @@
 ﻿import type { FastifyInstance } from 'fastify';
 import type { Health } from '@studi0/shared';
 import type { Ctx } from '../../context.js';
+import { activeSetupRuns } from '../../subjects/setupRun.js';
+
+/** Live agent/monitor snapshot (setup runs + non-terminal pipeline jobs). */
+export interface AgentStatus {
+  busy: boolean;
+  task: { kind: 'lesson-generation'; subjectId: string; subjectName: string; startedAt: string } | null;
+  jobs: Array<{
+    id: string;
+    kind: 'build' | 'update' | 'recluster';
+    subject: string;
+    status: 'queued' | 'running' | 'cancelling';
+    done: number;
+    total: number;
+  }>;
+}
 
 export async function registerHealthRoutes(app: FastifyInstance, ctx: Ctx): Promise<void> {
   app.get('/api/health', async (): Promise<Health> => {
@@ -25,6 +40,38 @@ export async function registerHealthRoutes(app: FastifyInstance, ctx: Ctx): Prom
       uptime_s: Math.round(process.uptime()),
       db: typeof ctx.db.prepare('SELECT 1').get() === 'object' ? 'ok' : 'error',
       probed_at: new Date().toISOString(),
+      jobs: jobs.map((j) => ({
+        id: j.id,
+        subject: j.subject,
+        kind: j.kind,
+        status: j.status,
+        done: j.progress_done,
+        total: j.progress_total,
+      })),
+    };
+  });
+
+  // live monitor: headless setup runs + non-terminal pipeline jobs
+  app.get('/api/agent/status', async (): Promise<AgentStatus> => {
+    const runs = activeSetupRuns();
+    const jobs = ctx.db
+      .prepare(
+        `SELECT j.id, j.kind, j.status, j.progress_done, j.progress_total, s.name AS subject
+         FROM jobs j JOIN subjects s ON s.id = j.subject_id
+         WHERE j.status IN ('queued', 'running', 'cancelling')
+         ORDER BY j.created_at`,
+      )
+      .all() as Array<{
+      id: string;
+      kind: 'build' | 'update' | 'recluster';
+      status: 'queued' | 'running' | 'cancelling';
+      progress_done: number;
+      progress_total: number;
+      subject: string;
+    }>;
+    return {
+      busy: runs.length > 0,
+      task: runs[0] ? { kind: 'lesson-generation', ...runs[0] } : null,
       jobs: jobs.map((j) => ({
         id: j.id,
         subject: j.subject,

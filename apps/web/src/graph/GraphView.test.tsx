@@ -54,9 +54,13 @@ describe('GraphView chrome', () => {
 
     // loading state is visible while the iframe loads
     expect(screen.getByText('Loading graph…')).toBeTruthy();
-    const iframe = await screen.findByTitle('Interactive knowledge graph');
-    fireEvent.load(iframe);
-    await waitFor(() => expect(screen.queryByText('Loading graph…')).toBeNull());
+    // a re-render can detach the found element between find and fire — re-query
+    // the live iframe on every retry until the loading state actually clears
+    await screen.findByTitle('Interactive knowledge graph');
+    await waitFor(() => {
+      fireEvent.load(screen.getByTitle('Interactive knowledge graph'));
+      expect(screen.queryByText('Loading graph…')).toBeNull();
+    });
 
     // legend chips: node types and relations with counts, most frequent first
     const legend = screen.getByLabelText('Graph legend');

@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, act } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Job } from '@studi0/shared';
 import { AppProvider } from '../state/app';
+import { ToastProvider } from '../components/Toast';
 import { SubjectPage } from './SubjectPage';
 
 // capture the SSE handlers so tests can push job events like the live stream does
@@ -101,7 +102,9 @@ describe('SubjectPage job state', () => {
   it('does not regress to queued when the start POST resolves after SSE said running', async () => {
     render(
       <AppProvider>
-        <SubjectPage subjectId="s1" />
+        <ToastProvider>
+          <SubjectPage subjectId="s1" />
+        </ToastProvider>
       </AppProvider>,
     );
     expect(await screen.findByText('QA Subject')).toBeTruthy();
@@ -121,7 +124,9 @@ describe('SubjectPage job state', () => {
   it('lets a cancel response upgrade the snapshot from running to cancelling', async () => {
     render(
       <AppProvider>
-        <SubjectPage subjectId="s1" />
+        <ToastProvider>
+          <SubjectPage subjectId="s1" />
+        </ToastProvider>
       </AppProvider>,
     );
     expect(await screen.findByText('QA Subject')).toBeTruthy();
@@ -140,7 +145,9 @@ describe('SubjectPage job state', () => {
   it('tails the build log over SSE on top of the history tail', async () => {
     render(
       <AppProvider>
-        <SubjectPage subjectId="s1" />
+        <ToastProvider>
+          <SubjectPage subjectId="s1" />
+        </ToastProvider>
       </AppProvider>,
     );
     expect(await screen.findByText('QA Subject')).toBeTruthy();

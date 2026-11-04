@@ -42,6 +42,7 @@ vi.mock('../api/client', async () => {
     ...actual,
     getSubjects: vi.fn(),
     getGroups: vi.fn(),
+    getAgentStatus: vi.fn(),
     renameSubject: vi.fn(),
     createGroup: vi.fn(),
     deleteGroup: vi.fn(),
@@ -62,6 +63,7 @@ beforeEach(() => {
   localStorage.clear();
   vi.mocked(client.getSubjects).mockResolvedValue(subjects);
   vi.mocked(client.getGroups).mockResolvedValue(groups);
+  vi.mocked(client.getAgentStatus).mockResolvedValue({ busy: false, task: null, jobs: [] });
 });
 
 afterEach(() => {
@@ -208,5 +210,41 @@ describe('Sidebar groups and menus', () => {
     fireEvent.contextMenu(await screen.findByRole('button', { name: 'DB Systems' }));
     expect(screen.getByRole('menuitem', { name: 'Rename' })).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: 'Delete files from disk' })).toBeTruthy();
+  });
+});
+
+describe('Sidebar agent status', () => {
+  it('shows "Agent idle" with a dim dot and an empty panel', async () => {
+    renderSidebar();
+    const btn = await screen.findByRole('button', { name: 'Agent idle' });
+    expect(btn.querySelector('.agent-dot')?.className).not.toContain('busy');
+    fireEvent.click(btn);
+    expect(screen.getByText('No active jobs')).toBeTruthy();
+  });
+
+  it('shows the working label and task/job rows when busy', async () => {
+    vi.mocked(client.getAgentStatus).mockResolvedValue({
+      busy: true,
+      task: { kind: 'lesson-generation', subjectId: 's1', subjectName: 'Linear Algebra', startedAt: NOW },
+      jobs: [{ id: 'j1', kind: 'build', subject: 'DB Systems', status: 'running', done: 2, total: 5 }],
+    });
+    renderSidebar();
+    const btn = await screen.findByRole('button', { name: 'Working: Linear Algebra' });
+    expect(btn.querySelector('.agent-dot')?.className).toContain('busy');
+    fireEvent.click(btn);
+    expect(screen.getByText(/Generating course lessons — Linear Algebra/)).toBeTruthy();
+    expect(screen.getByText(/Graph build — DB Systems: running/)).toBeTruthy();
+    expect(screen.getByText(/2\/5/)).toBeTruthy();
+  });
+
+  it('falls back to the raw kind when unknown', async () => {
+    vi.mocked(client.getAgentStatus).mockResolvedValue({
+      busy: false,
+      task: null,
+      jobs: [{ id: 'j9', kind: 'weird-kind', subject: 'DB Systems', status: 'queued' }],
+    });
+    renderSidebar();
+    fireEvent.click(await screen.findByRole('button', { name: 'Agent idle' }));
+    expect(screen.getByText(/weird-kind — DB Systems: queued/)).toBeTruthy();
   });
 });

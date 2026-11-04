@@ -142,6 +142,15 @@ export const shutdownServer = (): Promise<{ ok: boolean }> =>
 
 export const getHealth = (): Promise<Health> => api<Health>('/api/health');
 
+/** Best-effort agent overview; optional fields may be absent while the backend lands. */
+export interface AgentStatus {
+  busy: boolean;
+  task: { kind: string; subjectId: string; subjectName: string; startedAt: string } | null;
+  jobs: Array<{ id: string; kind: string; subject: string; status: string; done?: number; total?: number }>;
+}
+
+export const getAgentStatus = (): Promise<AgentStatus> => api<AgentStatus>('/api/agent/status');
+
 export const restartTeacher = (): Promise<{ ok: boolean; opencode: OpencodeHealth }> =>
   send<{ ok: boolean; opencode: OpencodeHealth }>('POST', '/api/teacher/restart');
 

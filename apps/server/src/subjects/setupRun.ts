@@ -3,8 +3,19 @@ import { detectAndIndexLessons } from '../teacher/lessons.js';
 import type { Ctx } from '../context.js';
 import type { SubjectRow } from '../db/repos/subjects.js';
 
-/** Subject ids with a course-setup teacher run in flight (per-process guard). */
-const active = new Set<string>();
+export interface ActiveSetupRun {
+  subjectId: string;
+  subjectName: string;
+  startedAt: string;
+}
+
+/** Course-setup teacher runs in flight (per-process guard + agent-status source). */
+const active = new Map<string, ActiveSetupRun>();
+
+/** Snapshot of in-flight setup runs, for the agent-status endpoint. */
+export function activeSetupRuns(): ActiveSetupRun[] {
+  return [...active.values()];
+}
 
 /** The prompt for the server-initiated headless course-setup run. */
 export function setupPrompt(subjectName: string): string {
@@ -34,20 +45,36 @@ export function startSetupRun(
 ): 'started' | 'running' | 'skipped' {
   if (active.has(subject.id)) return 'running';
   if (!resolveOpencodeBin()) return 'skipped';
-  active.add(subject.id);
+  const entry: ActiveSetupRun = {
+    subjectId: subject.id,
+    subjectName: subject.name,
+    startedAt: new Date().toISOString(),
+  };
+  active.set(subject.id, entry);
+  ctx.events.emit(subject.id, 'setup', { state: 'started', ...entry });
   const before = import('../teacher/lessons.js').then((m) => m.snapshotLessons(subject));
   void (async () => {
     try {
       await ctx.teacherRun(subject.path, setupPrompt(subject.name));
     } catch (e) {
-      console.error(
-        `[setup-run ${subject.id.slice(0, 8)}] failed:`,
-        e instanceof Error ? e.message : e,
-      );
+      const msg = e instanceof Error ? e.message : e;
+      console.error(`[setup-run ${subject.id.slice(0, 8)}] failed:`, msg);
+      ctx.events.emit(subject.id, 'setup', {
+        state: 'failed',
+        subjectId: subject.id,
+        subjectName: subject.name,
+        error: msg instanceof Error ? msg.message : String(msg),
+      });
     } finally {
       try {
         // whatever got written lands in the app immediately (SSE onLesson)
-        await detectAndIndexLessons(ctx.db, subject, await before, ctx.events);
+        const rows = await detectAndIndexLessons(ctx.db, subject, await before, ctx.events);
+        ctx.events.emit(subject.id, 'setup', {
+          state: 'done',
+          subjectId: subject.id,
+          subjectName: subject.name,
+          lessons: rows.length,
+        });
       } catch (e) {
         console.error(`[setup-run ${subject.id.slice(0, 8)}] indexing failed:`, e instanceof Error ? e.message : e);
       }
