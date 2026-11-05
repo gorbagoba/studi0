@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@fastify/multipart": "^10.1.6",
+    "@huggingface/transformers": "^4.3.2",
     "@opencode/client": "2.2.1",
     "@studi0/shared": "workspace:*",
     "fastify": "^5.12.7",

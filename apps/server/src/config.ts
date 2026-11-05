@@ -24,6 +24,11 @@ export interface Config {
   splitTargetBytes: number; // pdf-split target size per part (test/tuning seam)
   maxChunkConcurrency: number; // chunk-wave parallelism (STUDI0_MAX_CHUNK_CONCURRENCY, clamped 1–12)
   harness: 'opencode' | 'claude' | 'codex'; // user's coding harness (STUDI0_HARNESS) — skill targeting + pipeline agent lane; runner is opencode today (seam for future adapters)
+  /** chat engine: 'native' = server-native OpenAI-compatible loop; 'opencode' = legacy wrapper */
+  chatEngine: 'native' | 'opencode';
+  chatBaseUrl: string;
+  chatApiKey: string | null;
+  chatModel: string;
 }
 
 // repo root = apps/server/src -> up 3
@@ -45,6 +50,10 @@ try {
       'STUDI0_SPLIT_TARGET_BYTES',
       'STUDI0_HARNESS',
       'OPENCODE_BIN',
+      'CHAT_ENGINE',
+      'CHAT_BASE_URL',
+      'CHAT_API_KEY',
+      'CHAT_MODEL',
     ]);
     if (KNOWN_ENV_KEYS.has(m[1]) && process.env[m[1]] === undefined) {
       process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
@@ -57,6 +66,14 @@ try {
 export function makeConfig(dataDir?: string): Config {
   const dir = dataDir ?? process.env.STUDI0_DATA_DIR ?? resolve(repoRoot, 'data');
   const chunkConcurrency = Number(process.env.STUDI0_MAX_CHUNK_CONCURRENCY);
+  // native engine is valid only with a complete gateway config — else fall back
+  const nativeReady = Boolean(process.env.CHAT_BASE_URL && process.env.CHAT_API_KEY && process.env.CHAT_MODEL);
+  let chatEngine: 'native' | 'opencode' = 'opencode';
+  if (process.env.CHAT_ENGINE === 'native' && nativeReady) chatEngine = 'native';
+  else if (process.env.CHAT_ENGINE === 'native')
+    console.warn('[config] CHAT_ENGINE=native needs CHAT_BASE_URL, CHAT_API_KEY and CHAT_MODEL — using opencode');
+  else if (process.env.CHAT_ENGINE && process.env.CHAT_ENGINE !== 'opencode')
+    console.warn(`[config] unknown CHAT_ENGINE=${process.env.CHAT_ENGINE} — using opencode`);
   return {
     port: Number(process.env.PORT ?? 3001),
     host: '127.0.0.1',
@@ -83,5 +100,9 @@ export function makeConfig(dataDir?: string): Config {
     harness: ['opencode', 'claude', 'codex'].includes(process.env.STUDI0_HARNESS ?? '')
       ? (process.env.STUDI0_HARNESS as 'opencode' | 'claude' | 'codex')
       : 'opencode',
+    chatEngine,
+    chatBaseUrl: process.env.CHAT_BASE_URL ?? '',
+    chatApiKey: process.env.CHAT_API_KEY ?? null,
+    chatModel: process.env.CHAT_MODEL ?? '',
   };
 }

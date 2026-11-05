@@ -45,6 +45,9 @@ export async function registerChatRoutes(app: FastifyInstance, ctx: Ctx): Promis
   app.get('/api/chat/sessions/:id/messages', async (req) => {
     const session = chatRepo.getSession(db, (req.params as { id: string }).id);
     if (!session) throw new HttpError('SESSION_NOT_FOUND', 'session not found');
+    // native-engine sessions keep their transcript locally; opencode ones in opencode
+    const local = chatRepo.listMessages(db, session.id);
+    if (local.length > 0) return local;
     oc.ensureUp();
     return fetchHistory(oc.client(), session.oc_session_id);
   });

@@ -77,5 +77,8 @@ export async function detectAndIndexLessons(
       // unreadable lesson file — skip indexing, teacher will rewrite
     }
   }
+  // consume the diff: a caller that re-detects later (native write_lesson →
+  // end-of-turn safety net) must not double-index the same files
+  for (const [p, m] of after) before.set(p, m);
   return rows;
 }

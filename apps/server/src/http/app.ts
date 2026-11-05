@@ -22,6 +22,7 @@ import { registerGraphRoutes } from './routes/graph.js';
 import { registerLessonRoutes } from './routes/lessons.js';
 import { registerChatRoutes } from './routes/chat.js';
 import { registerPracticeRoutes } from './routes/practice.js';
+import { registerSearchRoutes } from './routes/search.js';
 
 export interface BuiltApp {
   app: FastifyInstance;
@@ -129,6 +130,7 @@ export async function buildApp(opts: { dataDir?: string; dbPath?: string } = {})
   registerLessonRoutes(app, ctx);
   registerChatRoutes(app, ctx);
   registerPracticeRoutes(app, ctx);
+  registerSearchRoutes(app, ctx);
 
   return { app, ctx };
 }

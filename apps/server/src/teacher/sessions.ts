@@ -79,6 +79,7 @@ export interface RotationResult {
 /**
  * Rotate when the session exceeds the message or byte threshold: summarize via
  * one-shot run into learning-records/, mark old inactive, start a fresh one.
+ * `getHistory` lets the native engine read its local transcript instead of opencode's.
  */
 export async function maybeRotate(
   client: OcClient,
@@ -86,8 +87,9 @@ export async function maybeRotate(
   db: Db,
   subject: SubjectRow,
   session: ChatSessionRow,
+  getHistory: (ocSessionId: string) => Promise<ChatMessage[]> = (id) => fetchHistory(client, id),
 ): Promise<RotationResult> {
-  const history = await fetchHistory(client, session.oc_session_id);
+  const history = await getHistory(session.oc_session_id);
   const bytes = history.reduce((n, m) => n + m.text.length, 0);
   if (session.msg_count < 24 && bytes <= 60_000) {
     return { session, rotated: false };

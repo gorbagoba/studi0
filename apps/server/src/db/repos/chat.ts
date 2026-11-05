@@ -1,6 +1,6 @@
 ﻿import { randomUUID } from 'node:crypto';
 import type { Db } from '../index.js';
-import type { ChatSession } from '@studi0/shared';
+import type { ChatMessage, ChatSession } from '@studi0/shared';
 
 export interface ChatSessionRow {
   id: string;
@@ -70,4 +70,19 @@ export function rotateSession(db: Db, id: string, summaryPath: string): void {
   db.prepare(
     'UPDATE chat_sessions SET active = 0, summary_path = ?, rotated_at = ? WHERE id = ?',
   ).run(summaryPath, new Date().toISOString(), id);
+}
+
+/** Persist one chat message (native engine transcript); opencode keeps its own store. */
+export function insertMessage(db: Db, sessionId: string, role: 'user' | 'assistant', text: string): void {
+  db.prepare(
+    'INSERT INTO chat_messages (id, session_id, role, text, created_at) VALUES (?, ?, ?, ?, ?)',
+  ).run(randomUUID(), sessionId, role, text, new Date().toISOString());
+}
+
+export function listMessages(db: Db, sessionId: string): ChatMessage[] {
+  return (
+    db
+      .prepare('SELECT id, role, text, created_at FROM chat_messages WHERE session_id = ? ORDER BY rowid')
+      .all(sessionId) as unknown as ChatMessage[]
+  );
 }

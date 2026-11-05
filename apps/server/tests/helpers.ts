@@ -9,9 +9,13 @@ export interface TestHarness extends BuiltApp {
 
 /** Fresh app in a temp data dir (own sqlite db, own subject roots). */
 export async function makeHarness(
-  opts: { dataDir?: string; dbPath?: string } = {},
+  opts: { dataDir?: string; dbPath?: string; env?: Record<string, string> } = {},
 ): Promise<TestHarness> {
   const dataDir = opts.dataDir ?? (await mkdtemp(path.join(tmpdir(), 'studi0-test-')));
+  // deterministic chat engine for every test unless a test opts into native;
+  // config reads process.env at buildApp time, after the repo .env was applied
+  process.env.CHAT_ENGINE = opts.env?.CHAT_ENGINE ?? 'opencode';
+  for (const [k, v] of Object.entries(opts.env ?? {})) process.env[k] = v;
   const { app, ctx } = await buildApp({ dataDir, dbPath: opts.dbPath });
   return {
     app,

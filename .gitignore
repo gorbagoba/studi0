@@ -10,6 +10,7 @@ data-*/
 .codedev-mcp/
 *.tmp.mjs
 .cortexkit/
+.models/
 
 
 

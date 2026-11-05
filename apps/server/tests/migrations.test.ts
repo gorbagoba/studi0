@@ -27,6 +27,7 @@ describe('migrations', () => {
     const db = tempDb();
     expect(tableNames(db)).toEqual([
       'attempts',
+      'chat_messages',
       'chat_sessions',
       'files',
       'groups',
@@ -38,6 +39,7 @@ describe('migrations', () => {
     ]);
     expect(indexNames(db)).toEqual([
       'idx_attempts_q',
+      'idx_chat_messages_s',
       'idx_jobs_sub',
       'idx_questions_s',
       'idx_sched_due',
@@ -45,7 +47,7 @@ describe('migrations', () => {
     ]);
     expect(
       (db.prepare('PRAGMA user_version').get() as unknown as { user_version: number }).user_version,
-    ).toBe(5);
+    ).toBe(6);
   });
 
   it('is idempotent — reopening a migrated db changes nothing', () => {
