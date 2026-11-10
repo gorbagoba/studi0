@@ -13,6 +13,7 @@ import {
 import { safeResolve } from '../fs/paths.js';
 import { safeWriteFile } from '../fs/safeWrite.js';
 import { graphEnv } from '../graph/backendEnv.js';
+import { normalizeGraphifyOutput } from '../graph/normalize.js';
 import { checkGraphify } from '../graph/preflight.js';
 import * as jobsRepo from '../db/repos/jobs.js';
 import type { Db } from '../db/index.js';
@@ -206,6 +207,8 @@ export const makeRunPipeline =
           error: `opencode run exited with code ${res.code}`,
         });
       }
+      // an agent that cd-ed into graphify-out nested the output — flatten it deterministically
+      await normalizeGraphifyOutput(subject.path, log);
       // exit 0 is not success: a run that ends its turn mid-pipeline produces no graph
       if (!existsSync(path.join(subject.path, 'graphify-out', 'graph.json'))) {
         log('FAILED: run ended without producing graph.json (extraction incomplete? see out: lines above)');
@@ -337,6 +340,7 @@ export const makeRunPipeline =
           error: `merge run exited with code ${mergeRes.code}`,
         });
       }
+      await normalizeGraphifyOutput(subject.path, log);
       if (!existsSync(path.join(subject.path, 'graphify-out', 'graph.json'))) {
         log('FAILED: run ended without producing graph.json (extraction incomplete? see out: lines above)');
         return finish({

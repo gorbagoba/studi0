@@ -37,3 +37,10 @@ graphify is the project venv binary already on PATH (`GRAPHIFY_BIN`); the backen
 
 ## Artifacts live at the subject root
 Run every graphify command from the subject root and always pin the output: `graphify extract material --out graphify-out` (recluster: `graphify cluster graphify-out`). graphify-out/ lives at the SUBJECT ROOT. Never write, move or read graph-related artifacts under material/ — a graphify-out/ inside material/ is a bug: delete it and rerun with --out graphify-out.
+
+Never `cd` into graphify-out. Output MUST be exactly `<subject root>/graphify-out/graph.json`; a `graphify-out/graphify-out/` directory is a bug — move its contents up one level and delete it before reporting.
+
+## Shell (Windows PowerShell 5.1)
+The shell is Windows PowerShell 5.1. `&&`, `||` and `??` do not work — chain commands with `;`. Run each graphify command as a single line from the SUBJECT ROOT using absolute paths. To inspect JSON, write a .py file and run it with `<venv>\Scripts\python.exe` (the venv is on PATH / `GRAPHIFY_BIN`'s directory) instead of PowerShell JSON pipelines.
+
+When a rebuild asks for a backup, verify the backup file exists before deleting or clearing anything.

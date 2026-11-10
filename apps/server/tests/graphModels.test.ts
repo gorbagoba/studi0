@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { jobKindSchema } from '@studi0/shared';
@@ -35,12 +36,16 @@ afterEach(async () => {
 /** Run one pipeline job with stubbed spawns; returns every spawned arg array and the subject root. */
 async function spawnedArgs(
   kind: 'build' | 'update' | 'recluster' | 'rebuild' = 'build',
+  layout: 'root' | 'nested' = 'root',
 ): Promise<{ calls: string[][]; dir: string }> {
   const dir = await mkdtemp(path.join(tmpdir(), 'studi0-models-'));
   made.push(dir);
   await mkdir(path.join(dir, 'graphify-out', 'chunks'), { recursive: true });
   await writeFile(path.join(dir, CHUNK), 'x');
-  await writeFile(path.join(dir, 'graphify-out', 'graph.json'), '{}');
+  // 'nested' reproduces an agent that cd-ed into graphify-out before extracting
+  const graphDir = layout === 'nested' ? path.join(dir, 'graphify-out', 'graphify-out') : path.join(dir, 'graphify-out');
+  await mkdir(graphDir, { recursive: true });
+  await writeFile(path.join(graphDir, 'graph.json'), '{}');
   const db = openDb(path.join(dir, 'studi0.db'));
   insertSubject(db, { id: 'subject-1', name: 'S', path: dir, created_at: new Date().toISOString() });
   const job = jobsRepo.insertJob(db, 'job-1', 'subject-1', kind);
@@ -143,6 +148,15 @@ describe('graph pipeline model per stage', () => {
     expect(calls.some((a) => a[a.length - 1].includes('Execute this graphify chunk'))).toBe(true);
     const buildLog = await readFile(path.join(dir, 'graphify-out', 'build.log'), 'utf8');
     expect(buildLog).toContain('full rebuild (cache cleared)');
+  });
+
+  it('normalises a nested graphify-out before the success check', async () => {
+    const { dir } = await spawnedArgs('build', 'nested');
+
+    expect(existsSync(path.join(dir, 'graphify-out', 'graph.json'))).toBe(true);
+    expect(existsSync(path.join(dir, 'graphify-out', 'graphify-out'))).toBe(false);
+    const buildLog = await readFile(path.join(dir, 'graphify-out', 'build.log'), 'utf8');
+    expect(buildLog).toContain('normalised nested graphify-out → graphify-out');
   });
 });
 

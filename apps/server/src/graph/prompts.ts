@@ -40,9 +40,17 @@ const CHUNK_SCOPE_RULE =
 const GRAPH_OUT_RULE =
   'graphify-out/ lives at the SUBJECT ROOT. Never write, move or read graph-related artifacts under material/ — a graphify-out/ inside material/ is a bug: delete it and rerun with --out graphify-out.';
 
+/** The pipeline shell is Windows PowerShell 5.1 — POSIX chain operators are parse errors there. */
+const SHELL_RULE =
+  'SHELL: The shell is Windows PowerShell 5.1. `&&`, `||` and `??` do not work — chain commands with `;`. Run each graphify command as a single line from the SUBJECT ROOT using absolute paths. To inspect JSON, write a .py file and run it with `<venv>\\Scripts\\python.exe` (the venv is on PATH / GRAPHIFY_BIN\'s directory) instead of PowerShell JSON pipelines.';
+
+/** An agent that cd-ed into graphify-out nests the output — a hard failure for the runner. */
+const OUTPUT_LOCATION_RULE =
+  'OUTPUT LOCATION: Never `cd` into graphify-out. Output MUST be exactly `<subject root>/graphify-out/graph.json`; a `graphify-out/graphify-out/` directory is a bug — move its contents up one level and delete it before reporting.';
+
 /** Rebuild-only: the current graph is backed up before any stale build state is deleted. */
 const REBUILD_BACKUP =
-  'First, if graphify-out/graph.json exists, copy it to graphify-out/graph.json.pre-rebuild.bak (skip when absent). Never delete or overwrite graph.json before that backup exists.';
+  'First, if graphify-out/graph.json exists, copy it to graphify-out/graph.json.pre-rebuild.bak (skip when absent). Verify the backup file exists before deleting or clearing anything. Never delete or overwrite graph.json before that backup exists.';
 
 /** Rebuild-only: stale build state at the SUBJECT ROOT, and nothing else. */
 const REBUILD_CLEAR =
@@ -92,6 +100,8 @@ ${rebuildSteps}1. List the material/ files that need graphify extraction to ${ta
 {"chunks":["graphify-out/chunks/chunk-01.md","graphify-out/chunks/chunk-02.md"],"total":<number of chunk files>}
 Paths are relative to the subject root and must match the files you wrote.
 ${GRAPH_OUT_RULE}
+${OUTPUT_LOCATION_RULE}
+${SHELL_RULE}
 ${CHUNK_SCOPE_RULE}
 ${GRAPH_ENV_RULE}
 ${ENVIRONMENT_RULE}
@@ -113,6 +123,8 @@ export function chunkWavePrompt(
   return `Execute this graphify chunk extraction: read "${chunkPath}" and run graphify (pinned version 0.9.95, Python 3) from the SUBJECT ROOT as \`graphify extract material --out graphify-out\` for exactly the material/ files it lists, ${resume}.
 Run graphify in this turn — do NOT use the task/subagent tool and do NOT spawn background workers; the runner parallelizes chunks for you.
 ${GRAPH_OUT_RULE}
+${OUTPUT_LOCATION_RULE}
+${SHELL_RULE}
 ${ONTOLOGY_RULES}
 The extraction must pass the ontology to graphify so chunk outputs carry these exact types.
 ${GRAPH_ENV_RULE}
@@ -128,6 +140,8 @@ export function mergePrompt(subjectName: string): string {
   return `You are the graph extraction pipeline for the course subject "${subjectName}".
 All chunk extractions are done. Run graphify (pinned version 0.9.95, Python 3) from the SUBJECT ROOT with \`--out graphify-out\` to merge the per-chunk extraction outputs under graphify-out/ into the final knowledge graph and export graphify-out/ (graph.json + graph.html + wiki/ + GRAPH_REPORT.md). Do not re-extract files that already have chunk outputs; resume from cache.
 ${GRAPH_OUT_RULE}
+${OUTPUT_LOCATION_RULE}
+${SHELL_RULE}
 ${CHUNK_SCOPE_RULE}
 ${ONTOLOGY_RULES}
 The merged graph must carry these exact types.
