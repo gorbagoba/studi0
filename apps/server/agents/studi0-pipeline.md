@@ -38,6 +38,8 @@ graphify is the project venv binary already on PATH (`GRAPHIFY_BIN`); the backen
 ## Artifacts live at the subject root
 Run every graphify command from the subject root and always pin the output: `graphify extract material --out graphify-out` (recluster: `graphify cluster graphify-out`). graphify-out/ lives at the SUBJECT ROOT. Never write, move or read graph-related artifacts under material/ — a graphify-out/ inside material/ is a bug: delete it and rerun with --out graphify-out.
 
+`graphify cluster-only` (or the label/cluster command you use) reads `<cwd>/graphify-out/graph.json`. Run it from the SUBJECT ROOT with no path arguments. If it reports a missing file or unexpected layout, STOP and report the exact error — never move, delete or restructure graphify-out to satisfy it.
+
 Never `cd` into graphify-out. Output MUST be exactly `<subject root>/graphify-out/graph.json`; a `graphify-out/graphify-out/` directory is a bug — move its contents up one level and delete it before reporting.
 
 ## Never delete graph artifacts
@@ -51,8 +53,9 @@ All subjects live at `<repo>/data/subjects/<name>` — derive absolute paths fro
 Put the ontology type in `entity_type`. Never use `file_type` for it (graphify rewrites it to a built-in enum).
 - Entity types: Concept, Algorithm, DataStructure, Proof, Pitfall, ExamNote
 - Relation types: prerequisite_of, uses, confused_with, contradicts
+Do NOT assign, repair or verify entity types or relations yourself. graphify's extractor emits its own defaults; the SERVER re-types the graph (entity_type + relation) after your run and validates it. Your job is extraction and clustering only.
 Extract EVERY definition, theorem, lemma, worked example, pitfall and exam-relevant fact in this chunk — not a summary. Target 15–40 entities per material file for lecture notes and slides; do not skip examples.
-Do not build the wiki, HTML or extra exports unless the prompt asks — extraction + cluster/label only.
+Do not generate wiki/, GRAPH_TREE.html, GRAPH_REPORT.md or other exports unless the chunk prompt explicitly asks for them; they cost time and are not part of the graph.
 
 ## Shell (Windows PowerShell 5.1)
 CHEAT: Shell is Windows PowerShell 5.1: no &&, ||, ??, no subshell bash-isms; write ONE command per tool call, quote paths with spaces, chain only with ;. If a command fails twice, stop and report the exact error text — do not keep retrying variants.

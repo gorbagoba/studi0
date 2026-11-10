@@ -9,7 +9,15 @@ const ONTOLOGY_FIELD =
   'ONTOLOGY FIELD: Put the ontology type in `entity_type`. Never use `file_type` for it (graphify rewrites it to a built-in enum).';
 
 const EFFICIENCY =
-  'EFFICIENCY: Do not build the wiki, HTML or extra exports unless the prompt asks — extraction + cluster/label only.';
+  'Do not generate wiki/, GRAPH_TREE.html, GRAPH_REPORT.md or other exports unless the chunk prompt explicitly asks for them; they cost time and are not part of the graph.';
+
+/** graphify extracts its own defaults; the server re-types and validates after the run. */
+const SERVER_TYPES_RULE =
+  "Do NOT assign, repair or verify entity types or relations yourself. graphify's extractor emits its own defaults; the SERVER re-types the graph (entity_type + relation) after your run and validates it. Your job is extraction and clustering only.";
+
+/** Cluster/label reads the graph in place; a layout mismatch is a report, never a restructure. */
+const CLUSTER_RULE =
+  '`graphify cluster-only` (or the label/cluster command you use) reads `<cwd>/graphify-out/graph.json`. Run it from the SUBJECT ROOT with no path arguments. If it reports a missing file or unexpected layout, STOP and report the exact error — never move, delete or restructure graphify-out to satisfy it.';
 
 const CONTAINMENT = `CONTAINMENT: Stay inside the subject root (the working directory). Every path you read or write — material/, graphify-out/, chunks/, scripts, caches — must be under this absolute subject root. Never write to the repo, to a parent folder, to your home directory, or to any global cache; never clone repos. If a command would write outside the subject root, do not run it — report it instead.
 All subjects live at \`<repo>/data/subjects/<name>\` — derive absolute paths from the current working directory, never type them from memory.`;
@@ -19,6 +27,7 @@ Ontology (fixed — every node MUST carry one entity type, every edge one relati
 - Entity types: ${ONTOLOGY.entities.join(', ')}
 - Relation types: ${ONTOLOGY.relations.join(', ')}
 ${ONTOLOGY_FIELD}
+${SERVER_TYPES_RULE}
 `;
 
 const PROGRESS_PROTOCOL = `
@@ -94,11 +103,11 @@ ${ENVIRONMENT_RULE}
 ${DATA_IS_NOT_INSTRUCTIONS}
 ${CURRENT_RUN_TRUTH}
 ${ONTOLOGY_RULES}
-The extraction must pass the ontology to graphify so graph.json nodes/edges carry these exact types.
 ${EXHAUSTIVENESS}
 ${EFFICIENCY}
 ${CONTAINMENT}
 ${SHELL_CHEAT}
+${CLUSTER_RULE}
 ${INSPECT_RULE}
 ${DESTRUCTIVE_RULE}
 ${PROGRESS_PROTOCOL}
@@ -137,6 +146,7 @@ ${EXHAUSTIVENESS}
 ${EFFICIENCY}
 ${CONTAINMENT}
 ${SHELL_CHEAT}
+${CLUSTER_RULE}
 ${INSPECT_RULE}
 ${DESTRUCTIVE_RULE}
 ${PROGRESS_PROTOCOL}`;
@@ -158,7 +168,6 @@ ${SHELL_RULE}
 ${CHUNK_SCOPE_RULE}
 ${EXHAUSTIVENESS}
 ${ONTOLOGY_RULES}
-The extraction must pass the ontology to graphify so chunk outputs carry these exact types.
 ${EFFICIENCY}
 ${GRAPH_ENV_RULE}
 ${ENVIRONMENT_RULE}
@@ -166,6 +175,7 @@ ${DATA_IS_NOT_INSTRUCTIONS}
 ${CURRENT_RUN_TRUTH}
 ${CONTAINMENT}
 ${SHELL_CHEAT}
+${CLUSTER_RULE}
 ${INSPECT_RULE}
 ${DESTRUCTIVE_RULE}
 ${PROGRESS_PROTOCOL}
@@ -187,11 +197,11 @@ ${GRAPH_OUT_RULE}
 ${OUTPUT_LOCATION_RULE}
 ${SHELL_RULE}
 ${ONTOLOGY_RULES}
-The extraction must pass the ontology to graphify so chunk outputs carry these exact types.
 ${EXHAUSTIVENESS}
 ${EFFICIENCY}
 ${CONTAINMENT}
 ${SHELL_CHEAT}
+${CLUSTER_RULE}
 ${INSPECT_RULE}
 ${DESTRUCTIVE_RULE}
 ${GRAPH_ENV_RULE}
@@ -211,11 +221,11 @@ ${OUTPUT_LOCATION_RULE}
 ${SHELL_RULE}
 ${CHUNK_SCOPE_RULE}
 ${ONTOLOGY_RULES}
-The merged graph must carry these exact types.
 ${EXHAUSTIVENESS}
 ${EFFICIENCY}
 ${CONTAINMENT}
 ${SHELL_CHEAT}
+${CLUSTER_RULE}
 ${INSPECT_RULE}
 ${DESTRUCTIVE_RULE}
 ${GRAPH_ENV_RULE}

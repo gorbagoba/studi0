@@ -138,8 +138,10 @@ describe('graph prompts: exhaustive extraction in the fixed ontology', () => {
     expect(prompt).toContain('Never use `file_type` for it');
   });
 
-  it.each(extractionPrompts)('%s skips unrequested wiki/HTML exports', (_name, prompt) => {
-    expect(prompt).toContain('Do not build the wiki, HTML or extra exports unless the prompt asks');
+  it.each(extractionPrompts)('%s skips unrequested exports', (_name, prompt) => {
+    expect(prompt).toContain(
+      'Do not generate wiki/, GRAPH_TREE.html, GRAPH_REPORT.md or other exports unless the chunk prompt explicitly asks for them',
+    );
   });
 
   it('chunkPromptFile lists exactly the chunk files', () => {
@@ -199,5 +201,44 @@ describe('graph prompts: destructive and shell guardrails', () => {
   it.each(guarded)('%s never asks the agent to clear build state', (_name, prompt) => {
     expect(prompt).not.toContain('Then delete only the stale build state');
     expect(prompt).not.toContain('graphify-out/cache/');
+  });
+});
+
+const SERVER_TYPES_RULE =
+  "Do NOT assign, repair or verify entity types or relations yourself. graphify's extractor emits its own defaults; the SERVER re-types the graph (entity_type + relation) after your run and validates it. Your job is extraction and clustering only.";
+
+const CLUSTER_RULE =
+  '`graphify cluster-only` (or the label/cluster command you use) reads `<cwd>/graphify-out/graph.json`. Run it from the SUBJECT ROOT with no path arguments. If it reports a missing file or unexpected layout, STOP and report the exact error — never move, delete or restructure graphify-out to satisfy it.';
+
+const EFFICIENCY =
+  'Do not generate wiki/, GRAPH_TREE.html, GRAPH_REPORT.md or other exports unless the chunk prompt explicitly asks for them; they cost time and are not part of the graph.';
+
+describe('graph prompts: the server owns ontology typing', () => {
+  const running: [string, string][] = [
+    ['extractionPrompt', prompts[1][1]],
+    ['planPrompt', prompts[0][1]],
+    ['chunkWavePrompt', prompts[2][1]],
+    ['mergePrompt', prompts[3][1]],
+    ['chunkPromptFile', prompts[4][1]],
+    ['extractionPrompt rebuild', extractionPrompt('rebuild', 'st2334')],
+  ];
+
+  it.each(running)('%s forbids assigning, repairing or verifying types', (_name, prompt) => {
+    expect(prompt).toContain(SERVER_TYPES_RULE);
+  });
+
+  it.each(running)('%s runs cluster/label from the subject root without path arguments', (_name, prompt) => {
+    expect(prompt).toContain(CLUSTER_RULE);
+  });
+
+  it.each(running)('%s skips unrequested exports', (_name, prompt) => {
+    expect(prompt).toContain(EFFICIENCY);
+  });
+
+  it.each(running)('%s never asks the agent to fix entity types', (_name, prompt) => {
+    expect(prompt).not.toContain('must pass the ontology');
+    expect(prompt).not.toContain('must carry these exact types');
+    expect(prompt).not.toMatch(/fix (the )?(ontology|entity types?)/i);
+    expect(prompt).not.toMatch(/repair (the )?(ontology|entity types?)/i);
   });
 });
