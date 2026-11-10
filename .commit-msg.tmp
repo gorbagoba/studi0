@@ -1,5 +1,0 @@
-feat(lessons): right-click rename/delete menu; rename endpoint; stable test timeouts
-
-Lesson rows: right-click opens Rename/Delete (no visible button, no kebab). Rename = PATCH /api/lessons/:id, validating 1-200 chars and rewriting the HTML title and first h1 so a boot re-index keeps the name. Delete removes row + questions/attempts/schedule + file, and nulls chat_sessions.lesson_id first.
-
-Tests: deterministic setup-run wait (vi.waitFor instead of a 50ms sleep) and a 20s server testTimeout - the intermittent 5s timeouts were harness tests on a loaded machine, not logic failures; full suite verified 2/2 stable. Tests 278 (server 184 + web 94).
