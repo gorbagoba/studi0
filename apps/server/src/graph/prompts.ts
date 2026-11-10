@@ -17,6 +17,10 @@ If a file/chunk fails, emit: studi0-failed {"file":"<relative path>","reason":"<
 Never fake success for a failed file — report it and continue with the remaining files.
 `;
 
+/** graphify's backend is provisioned by the server env — prompts must not invite auto-detection. */
+const GRAPH_ENV_RULE =
+  'Run graphify with the environment already configured (GRAPHIFY_BACKEND is set); never set or request Google/Anthropic/Codex API keys.';
+
 export function extractionPrompt(kind: 'build' | 'update' | 'recluster', subjectName: string): string {
   const graphifyTask =
     kind === 'build'
@@ -44,6 +48,7 @@ export function planPrompt(kind: 'build' | 'update', subjectName: string): strin
 3. Reply with ONLY one line of strict JSON, no other text:
 {"chunks":["graphify-out/chunks/chunk-01.md","graphify-out/chunks/chunk-02.md"],"total":<number of chunk files>}
 Paths are relative to the subject root and must match the files you wrote.
+${GRAPH_ENV_RULE}
 ${ONTOLOGY_RULES}
 ${PROGRESS_PROTOCOL}`;
 }
@@ -54,6 +59,7 @@ export function chunkWavePrompt(chunkPath: string): string {
 Run graphify in this turn — do NOT use the task/subagent tool and do NOT spawn background workers; the runner parallelizes chunks for you.
 ${ONTOLOGY_RULES}
 The extraction must pass the ontology to graphify so chunk outputs carry these exact types.
+${GRAPH_ENV_RULE}
 ${PROGRESS_PROTOCOL}
 When finished, reply with one line: DONE <n> files ok, <k> failed.`;
 }
@@ -64,6 +70,7 @@ export function mergePrompt(subjectName: string): string {
 All chunk extractions are done. Run graphify (pinned version 0.9.95, Python 3) to merge the per-chunk extraction outputs under graphify-out/ into the final knowledge graph and export graphify-out/ (graph.json + graph.html + wiki/ + GRAPH_REPORT.md). Do not re-extract files that already have chunk outputs; resume from cache.
 ${ONTOLOGY_RULES}
 The merged graph must carry these exact types.
+${GRAPH_ENV_RULE}
 ${PROGRESS_PROTOCOL}
 When finished, reply with one line: DONE <n> files ok, <k> failed.`;
 }

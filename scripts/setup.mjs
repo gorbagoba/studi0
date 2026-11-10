@@ -23,7 +23,9 @@ const YES = process.argv.includes('--yes'); // consent to every download prompt 
 export const PORT_KEYS = { api: 'PORT', oc: 'OC_PORT', vite: 'VITE_PORT', preview: 'PREVIEW_PORT' };
 export const PORT_DEFAULTS = { api: 3001, oc: 44096, vite: 5173, preview: 4173 };
 export const PIP_PINS = [
-  { pkg: 'graphifyy', spec: 'graphifyy==0.9.95', want: (v) => v === '0.9.95' },
+  // [openai]: graphify's OpenAI-compatible backend needs the openai SDK,
+  // otherwise extraction/labeling silently degrades to placeholders
+  { pkg: 'graphifyy', spec: 'graphifyy[openai]==0.9.95', want: (v) => v === '0.9.95' },
   {
     pkg: 'pypdf',
     spec: 'pypdf>=6,<7',
@@ -182,6 +184,94 @@ export function writeEnvFile(changes, { exists = existsSync(path.join(repoRoot, 
     else lines.push(`${k}=${v}`);
   }
   write(p, `${lines.join('\n')}\n`);
+}
+
+// ── graphify LLM: which backend extracts the graph (SoCLaaS is NUS-only) ──
+
+/** Fallback extraction model when none is saved (mirrors apps/server graphModel). */
+export const GRAPH_DEFAULT_MODEL = 'nemotron3.5:30b';
+
+/** Display-safe secret: never more than the last 4 chars. */
+export function maskSecret(s) {
+  const v = String(s ?? '');
+  if (!v) return 'missing';
+  return v.length > 4 ? `••••${v.slice(-4)}` : 'set';
+}
+
+/**
+ * .env changes for the graph LLM question: 1 = chat gateway (CHAT_*), 2 = own
+ * OpenAI-compatible endpoint, 3 = Anthropic, 4 = Gemini, 5 = none. A blank
+ * required key returns {} (skip — never write a blank key).
+ */
+export function graphEnvChanges(choice, entered = {}, env = {}) {
+  if (choice === 1) {
+    if (!env.CHAT_BASE_URL || !env.CHAT_API_KEY) return {};
+    return {
+      STUDI0_GRAPH_BACKEND: 'openai',
+      STUDI0_GRAPH_BASE_URL: env.CHAT_BASE_URL,
+      STUDI0_GRAPH_API_KEY: env.CHAT_API_KEY,
+      STUDI0_GRAPH_MODEL: env.STUDI0_GRAPH_MODEL || GRAPH_DEFAULT_MODEL,
+    };
+  }
+  if (choice === 2) {
+    if (!entered.baseUrl || !entered.apiKey) return {};
+    return {
+      STUDI0_GRAPH_BACKEND: 'openai',
+      STUDI0_GRAPH_BASE_URL: entered.baseUrl,
+      STUDI0_GRAPH_API_KEY: entered.apiKey,
+      STUDI0_GRAPH_MODEL: entered.model || env.STUDI0_GRAPH_MODEL || GRAPH_DEFAULT_MODEL,
+    };
+  }
+  if (choice === 3 || choice === 4) {
+    if (!entered.apiKey) return {};
+    return {
+      STUDI0_GRAPH_BACKEND: choice === 3 ? 'claude' : 'gemini',
+      [choice === 3 ? 'ANTHROPIC_API_KEY' : 'GEMINI_API_KEY']: entered.apiKey,
+      STUDI0_GRAPH_MODEL: entered.model || '',
+    };
+  }
+  if (choice === 5) return { STUDI0_GRAPH_BACKEND: 'none' };
+  return {};
+}
+
+/** --yes / no TTY: keep saved graph keys; else inherit CHAT_*; else AST-only. */
+export function autoGraphChanges(env = {}) {
+  if (env.STUDI0_GRAPH_BACKEND) return {};
+  const inherited = graphEnvChanges(1, {}, env);
+  return Object.keys(inherited).length > 0 ? inherited : { STUDI0_GRAPH_BACKEND: 'none' };
+}
+
+/** Print-safe KEY=VALUE list (API keys masked). */
+function describeChanges(changes) {
+  return Object.entries(changes)
+    .map(([k, v]) => `${k}=${/KEY/.test(k) ? maskSecret(v) : v}`)
+    .join(', ');
+}
+
+/** Scan row: effective backend + model + whether a key is present (masked). */
+function checkGraphLlm(env) {
+  const backend = env.STUDI0_GRAPH_BACKEND || 'openai';
+  if (backend === 'none') return { ok: true, label: 'none — local AST-only' };
+  const model = env.STUDI0_GRAPH_MODEL || GRAPH_DEFAULT_MODEL;
+  const key =
+    backend === 'claude'
+      ? env.ANTHROPIC_API_KEY
+      : backend === 'gemini'
+        ? env.GEMINI_API_KEY
+        : env.STUDI0_GRAPH_API_KEY || env.CHAT_API_KEY;
+  return { ok: Boolean(key), label: `${backend} · ${model} · key ${key ? maskSecret(key) : 'missing'}` };
+}
+
+/** Free-text prompt; '' when non-interactive. */
+function askText(q) {
+  if (YES || !process.stdin.isTTY) return Promise.resolve('');
+  return new Promise((res) => {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(q, (a) => {
+      rl.close();
+      res(a.trim().replace(/^["']|["']$/g, ''));
+    });
+  });
 }
 
 function checkNode() {
@@ -347,6 +437,57 @@ async function choosePyTool(py, haveUv) {
   return picked === 'skip' ? null : picked;
 }
 
+const GRAPH_CHOICE_LABELS = [
+  'my chat gateway already in .env (CHAT_BASE_URL / CHAT_API_KEY)',
+  'my own OpenAI-compatible endpoint (OpenRouter, OpenAI, Groq, LM Studio, Ollama, …)',
+  'Anthropic (ANTHROPIC_API_KEY)',
+  'Google Gemini (GEMINI_API_KEY)',
+  'no LLM — local AST-only',
+];
+
+/** Which LLM extracts the graph; returns the .env changes to write ({} = skip). */
+async function chooseGraphLlm(env, notes) {
+  if (YES || !process.stdin.isTTY) {
+    const changes = autoGraphChanges(env);
+    if (Object.keys(changes).length === 0) notes.push('graph LLM: saved STUDI0_GRAPH_* keys kept (non-interactive)');
+    else if (changes.STUDI0_GRAPH_BACKEND === 'none') notes.push('graph LLM: no STUDI0_GRAPH_* or CHAT_* keys — wrote STUDI0_GRAPH_BACKEND=none (AST-only)');
+    else notes.push(`✔ graph LLM: inherited CHAT_* — ${describeChanges(changes)}`);
+    return changes;
+  }
+  const hasChat = Boolean(env.CHAT_BASE_URL && env.CHAT_API_KEY);
+  const saved = env.STUDI0_GRAPH_BACKEND;
+  const def = hasChat ? 1 : saved === 'claude' ? 3 : saved === 'gemini' ? 4 : saved === 'openai' ? 2 : 5;
+  const picked = await askChoice(
+    'Which LLM should graphify use for extraction?',
+    GRAPH_CHOICE_LABELS.map((label, i) => ({ key: i + 1, label })),
+    def,
+  );
+  if (picked === null) {
+    notes.push('graph LLM: skipped — invalid choice');
+    return {};
+  }
+  if (picked === 1 && !hasChat) {
+    notes.push('graph LLM: skipped — CHAT_BASE_URL / CHAT_API_KEY not in .env');
+    return {};
+  }
+  const entered = {};
+  if (picked === 2) {
+    entered.baseUrl = await askText('graph base URL (e.g. https://openrouter.ai/api/v1): ');
+    entered.apiKey = await askText('graph API key (blank to skip): ');
+    entered.model = await askText('graph model: ');
+  } else if (picked === 3 || picked === 4) {
+    entered.apiKey = await askText(`${picked === 3 ? 'ANTHROPIC' : 'GEMINI'} API key (blank to skip): `);
+    entered.model = await askText('model (blank = backend default): ');
+  }
+  const changes = graphEnvChanges(picked, entered, env);
+  if (Object.keys(changes).length === 0) {
+    notes.push('graph LLM: skipped — no key entered, existing keys left untouched');
+    return {};
+  }
+  notes.push(`✔ graph LLM: ${describeChanges(changes)}`);
+  return changes;
+}
+
 /** OPENCODE_BIN fix: candidate search → confirm → write .env (or paste path). */
 async function maybeFixOpencodeBin(ocBin) {
   if (ocBin.ok) return [];
@@ -478,6 +619,7 @@ async function main() {
   rows.push(['codex', codex]);
   const ocBin = checkOpencodeBin(process.env.OPENCODE_BIN ?? envFile.OPENCODE_BIN);
   rows.push(['oc bin', ocBin]);
+  rows.push(['graph LLM', checkGraphLlm(envFile)]);
 
   // ── ask phase: harness + python tool (defaults = saved .env / detection) ──
   const savedHarness = envFile.STUDI0_HARNESS && SKILL_AGENT_BY_CLI[envFile.STUDI0_HARNESS] ? envFile.STUDI0_HARNESS : null;
@@ -485,31 +627,32 @@ async function main() {
   notes.push(`harness: ${harness}${savedHarness && savedHarness !== harness ? ' (changed)' : ''}`);
   const uvCheck = run('uv', ['--version']);
   const pyTool = await choosePyTool(py, uvCheck.ok);
+  const graphChanges = await chooseGraphLlm(envFile, notes);
 
   // ── apply phase ──
   if (pyTool) notes.push(...installPipPkgs(py, pyTool));
   notes.push(...(await maybeFixOpencodeBin(ocBin)));
   notes.push(await maybeInstallGraphifySkill(harness));
 
-  const envChanges = { STUDI0_HARNESS: harness };
+  const envChanges = { STUDI0_HARNESS: harness, ...graphChanges };
   const envPath = path.join(repoRoot, '.env');
   const { picks, changes: portChanges, notes: portNotes } = await pickPorts();
   notes.push(...portNotes);
   const allChanges = { ...envChanges, ...portChanges };
   if (Object.keys(allChanges).length > 0) {
     if (existsSync(envPath) && !FORCE) {
-      // STUDI0_HARNESS is setup-owned and consented — always writable; ports keep the guard
+      // STUDI0_HARNESS + graph keys are setup-owned and consented — always writable; ports keep the guard
       const portKeys = Object.keys(portChanges);
       if (portKeys.length === 0) {
         writeEnvFile(envChanges);
-        notes.push(`✔ .env: STUDI0_HARNESS=${harness}`);
+        notes.push(`✔ .env: ${describeChanges(envChanges)}`);
       } else {
         writeEnvFile(envChanges);
         notes.push(`✗ .env exists — port changes refused (${portKeys.join(', ')}). Re-run with --force.`);
       }
     } else {
       writeEnvFile(allChanges);
-      notes.push(`✔ .env written: ${Object.entries(allChanges).map(([k, v]) => `${k}=${v}`).join(', ')}`);
+      notes.push(`✔ .env written: ${describeChanges(allChanges)}`);
     }
   } else {
     notes.push('✔ ports as configured are free — no .env changes needed');

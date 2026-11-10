@@ -42,6 +42,13 @@ export interface Config {
   graphExtractModel: string;
   graphMergeModel: string;
   graphVerifyModel: string;
+  /** graphify's own LLM backend (GRAPHIFY_BACKEND); 'none' = local AST-only */
+  graphBackend: string;
+  /** OpenAI-compatible gateway graphify calls (OPENAI_BASE_URL) */
+  graphBaseUrl: string;
+  graphApiKey: string;
+  /** model graphify itself uses (GRAPHIFY_OPENAI_MODEL) */
+  graphModel: string;
 }
 
 /** Lesson-writer template kwargs from JSON env; malformed input falls back (one warn). */
@@ -91,6 +98,13 @@ try {
       'STUDI0_GRAPH_EXTRACT_MODEL',
       'STUDI0_GRAPH_MERGE_MODEL',
       'STUDI0_GRAPH_VERIFY_MODEL',
+      'STUDI0_GRAPH_BACKEND',
+      'STUDI0_GRAPH_BASE_URL',
+      'STUDI0_GRAPH_API_KEY',
+      'STUDI0_GRAPH_MODEL',
+      'ANTHROPIC_API_KEY',
+      'GEMINI_API_KEY',
+      'GOOGLE_API_KEY',
     ]);
     if (KNOWN_ENV_KEYS.has(m[1]) && process.env[m[1]] === undefined) {
       process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
@@ -111,6 +125,27 @@ export function makeConfig(dataDir?: string): Config {
     console.warn('[config] CHAT_ENGINE=native needs CHAT_BASE_URL, CHAT_API_KEY and CHAT_MODEL — using opencode');
   else if (process.env.CHAT_ENGINE && process.env.CHAT_ENGINE !== 'opencode')
     console.warn(`[config] unknown CHAT_ENGINE=${process.env.CHAT_ENGINE} — using opencode`);
+  const chatBaseUrl = process.env.CHAT_BASE_URL ?? '';
+  const chatApiKey = process.env.CHAT_API_KEY ?? null;
+  // graphify must never auto-detect a vendor backend: explicit backend, gateway by default
+  const requested = process.env.STUDI0_GRAPH_BACKEND ?? 'openai';
+  let graphBackend = ['openai', 'claude', 'gemini', 'none'].includes(requested) ? requested : 'none';
+  if (graphBackend !== requested) {
+    console.warn(`[config] unknown STUDI0_GRAPH_BACKEND=${requested}; using none (AST-only)`);
+  }
+  const graphBaseUrl = process.env.STUDI0_GRAPH_BASE_URL ?? chatBaseUrl;
+  let graphApiKey = '';
+  if (graphBackend === 'openai') graphApiKey = process.env.STUDI0_GRAPH_API_KEY ?? chatApiKey ?? '';
+  else if (graphBackend === 'claude') graphApiKey = process.env.ANTHROPIC_API_KEY ?? '';
+  else if (graphBackend === 'gemini') graphApiKey = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? '';
+  const graphModel =
+    process.env.STUDI0_GRAPH_MODEL ?? (graphBackend === 'openai' ? 'nemotron3.5:30b' : '');
+  const missing =
+    graphBackend === 'openai' ? !(graphBaseUrl && graphApiKey && graphModel) : !graphApiKey;
+  if (graphBackend !== 'none' && missing) {
+    console.warn(`[config] graph backend ${graphBackend} has no complete credentials; using none (AST-only)`);
+    graphBackend = 'none';
+  }
   return {
     port: Number(process.env.PORT ?? 3001),
     host: '127.0.0.1',
@@ -138,8 +173,8 @@ export function makeConfig(dataDir?: string): Config {
       ? (process.env.STUDI0_HARNESS as 'opencode' | 'claude' | 'codex')
       : 'opencode',
     chatEngine,
-    chatBaseUrl: process.env.CHAT_BASE_URL ?? '',
-    chatApiKey: process.env.CHAT_API_KEY ?? null,
+    chatBaseUrl,
+    chatApiKey,
     chatModel: process.env.CHAT_MODEL ?? '',
     chatModelLesson: process.env.CHAT_MODEL_LESSON ?? 'x-test-2',
     chatLessonTemplateKwargs: parseLessonTemplateKwargs(process.env.CHAT_MODEL_LESSON_TEMPLATE_KWARGS),
@@ -151,5 +186,9 @@ export function makeConfig(dataDir?: string): Config {
     graphExtractModel: process.env.STUDI0_GRAPH_EXTRACT_MODEL ?? 'soclaas/nemotron3.5:30b',
     graphMergeModel: process.env.STUDI0_GRAPH_MERGE_MODEL ?? 'soclaas/nemotron3.5:30b',
     graphVerifyModel: process.env.STUDI0_GRAPH_VERIFY_MODEL ?? 'soclaas/x-test-2',
+    graphBackend,
+    graphBaseUrl,
+    graphApiKey,
+    graphModel,
   };
 }

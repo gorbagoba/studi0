@@ -12,6 +12,7 @@ import {
 } from '../graph/prompts.js';
 import { safeResolve } from '../fs/paths.js';
 import { safeWriteFile } from '../fs/safeWrite.js';
+import { graphEnv } from '../graph/backendEnv.js';
 import * as jobsRepo from '../db/repos/jobs.js';
 import type { Db } from '../db/index.js';
 import type { EventBus } from '../http/sse.js';
@@ -78,7 +79,7 @@ export const makeRunPipeline =
       // --agent: the global default agent is plan-only and would never execute
       // graphify; --standalone: a private opencode server inside this tree so
       // kill-tree can stop (and observe) the actual agent work
-      const { pid, done, child } = spawnArgs(args, subject.path);
+      const { pid, done, child } = spawnArgs(args, subject.path, graphEnv(cfg));
       const kill = () => {
         if (pid !== undefined) killTreeWithDeadline(pid);
         else child.kill();

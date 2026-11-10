@@ -3,6 +3,14 @@ export const PORT_KEYS: Record<string, string>;
 export const PORT_DEFAULTS: Record<string, number>;
 export const PIP_PINS: { pkg: string; spec: string; want: (v: string) => boolean }[];
 export const SKILL_AGENT_BY_CLI: Record<string, string>;
+export const GRAPH_DEFAULT_MODEL: string;
+export function maskSecret(s?: string | null): string;
+export function graphEnvChanges(
+  choice: number,
+  entered?: { baseUrl?: string; apiKey?: string; model?: string },
+  env?: Record<string, string | undefined>,
+): Record<string, string>;
+export function autoGraphChanges(env?: Record<string, string | undefined>): Record<string, string>;
 export function pickDefaultHarness(have: { opencode?: boolean; claude?: boolean; codex?: boolean }): 'opencode' | 'claude' | 'codex' | null;
 export function resolveOpencodeFromLines(
   lines: string[],

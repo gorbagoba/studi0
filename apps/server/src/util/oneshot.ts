@@ -1,6 +1,7 @@
 import type { Config } from '../config.js';
 import { spawnArgs, resolveOpencodeBin, killTree, killTreeWithDeadline } from './proc.js';
 import { stripStepMarkers } from '../pipeline/parse.js';
+import { graphEnv } from '../graph/backendEnv.js';
 
 export type OneshotFn = (cwd: string, prompt: string, signal?: AbortSignal) => Promise<string>;
 
@@ -33,7 +34,7 @@ export const makeOneshot =
     if (opts.model) args.push('--model', opts.model);
     if (opts.agent) args.push('--agent', opts.agent);
     args.push('--standalone', prompt);
-    const { done, child } = spawnArgs(args, cwd);
+    const { done, child } = spawnArgs(args, cwd, graphEnv(cfg));
     // same kill semantics as the pipeline runner: the tree, not just the child
     const kill = () => {
       if (child.pid !== undefined) killTreeWithDeadline(child.pid);

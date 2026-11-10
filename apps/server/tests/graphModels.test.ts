@@ -101,4 +101,31 @@ describe('graph pipeline model per stage', () => {
       }
     }
   });
+
+  it('spawns every stage with the graphify backend env', async () => {
+    const env = {
+      STUDI0_GRAPH_BACKEND: 'openai',
+      STUDI0_GRAPH_BASE_URL: 'http://gw.local/v1',
+      STUDI0_GRAPH_API_KEY: 'gw-key',
+      STUDI0_GRAPH_MODEL: 'm1',
+    };
+    Object.assign(process.env, env);
+    try {
+      await spawnedArgs();
+      const envs = mocks.spawnArgs.mock.calls.map((c) => c[2] as Record<string, string>);
+      expect(envs.length).toBeGreaterThan(0); // plan + chunk(s) + merge + verification
+      for (const childEnv of envs) {
+        expect(childEnv).toMatchObject({
+          GRAPHIFY_BACKEND: 'openai',
+          OPENAI_BASE_URL: 'http://gw.local/v1',
+          OPENAI_API_KEY: 'gw-key',
+          GRAPHIFY_OPENAI_MODEL: 'm1',
+          ANTHROPIC_API_KEY: '',
+          GEMINI_API_KEY: '',
+        });
+      }
+    } finally {
+      for (const key of Object.keys(env)) delete process.env[key];
+    }
+  });
 });
