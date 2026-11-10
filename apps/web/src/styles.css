@@ -1249,6 +1249,16 @@ dl.diag-list dd.diag-status {
   width: 100%;
 }
 
+.lesson-row-wrap {
+  display: flex;
+  gap: 0.4rem;
+  align-items: stretch;
+}
+
+.lesson-row-wrap .lesson-row {
+  flex: 1;
+}
+
 .lesson-row {
   display: flex;
   flex-direction: column;

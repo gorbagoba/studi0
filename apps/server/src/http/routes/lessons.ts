@@ -1,6 +1,7 @@
 ﻿import path from 'node:path';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, stat, unlink } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { z } from 'zod';
 import type { FastifyInstance } from 'fastify';
 import type { Ctx } from '../../context.js';
 import { requireSubject } from '../../subjects/service.js';
@@ -8,7 +9,8 @@ import * as lessonsRepo from '../../db/repos/lessons.js';
 import * as questionsRepo from '../../db/repos/questions.js';
 import * as attemptsRepo from '../../db/repos/attempts.js';
 import { safeResolve, isInside } from '../../fs/paths.js';
-import { parseLessonMarker, extractTitle } from '../../teacher/lessons.js';
+import { safeWriteFile } from '../../fs/safeWrite.js';
+import { parseLessonMarker, extractTitle, rewriteLessonTitle } from '../../teacher/lessons.js';
 import { parseWith } from '../validate.js';
 import { gradeAnswer } from '../../practice/grade.js';
 import { HttpError } from '../../util/errors.js';
@@ -18,12 +20,57 @@ import {
   type LessonReviewResponse,
 } from '@studi0/shared';
 
+// local on purpose: a lesson rename is route-only, not shared API surface
+const renameLessonBodySchema = z.object({
+  title: z
+    .string()
+    .trim()
+    .transform((s) => s.replace(/<[^>]*>/g, '').replace(/[<>]/g, '').trim())
+    .pipe(z.string().min(1).max(200)),
+});
+
 export async function registerLessonRoutes(app: FastifyInstance, ctx: Ctx): Promise<void> {
   const { db } = ctx;
 
   app.get('/api/subjects/:id/lessons', async (req) => {
     const subject = requireSubject(db, (req.params as { id: string }).id);
     return lessonsRepo.listLessons(db, subject.id).map(lessonsRepo.lessonToDto);
+  });
+
+  // DB is the source of truth: a missing/locked file must not fail the delete.
+  app.delete('/api/lessons/:id', async (req) => {
+    const lesson = lessonsRepo.deleteLesson(db, (req.params as { id: string }).id);
+    if (!lesson) throw new HttpError('FILE_NOT_FOUND', 'lesson not found');
+    try {
+      const subjectPath = requireSubject(db, lesson.subject_id).path;
+      const abs = safeResolve(subjectPath, lesson.rel_path);
+      if (!isInside(subjectPath, abs)) {
+        throw new HttpError('PATH_TRAVERSAL', `path escapes the subject: ${lesson.rel_path}`);
+      }
+      await unlink(abs);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
+        req.log.warn({ err: e }, 'lesson deleted but its file could not be removed');
+      }
+    }
+    return { ok: true };
+  });
+
+  // DB is the source of truth; the file is retitled too so a boot re-index agrees.
+  app.patch('/api/lessons/:id', async (req) => {
+    const lesson = lessonsRepo.getLesson(db, (req.params as { id: string }).id);
+    if (!lesson) throw new HttpError('FILE_NOT_FOUND', 'lesson not found');
+    const body = parseWith(renameLessonBodySchema, req.body);
+    const updated = lessonsRepo.updateLessonTitle(db, lesson.id, body.title);
+    if (!updated) throw new HttpError('FILE_NOT_FOUND', 'lesson not found');
+    try {
+      const subjectPath = requireSubject(db, lesson.subject_id).path;
+      const abs = safeResolve(subjectPath, lesson.rel_path);
+      await safeWriteFile(abs, rewriteLessonTitle(await readFile(abs, 'utf8'), body.title));
+    } catch (e) {
+      req.log.warn({ err: e }, 'lesson renamed but its file could not be updated');
+    }
+    return lessonsRepo.lessonToDto(updated);
   });
 
   // One-shot lesson review: every submitted answer is graded now (mcq offline,

@@ -221,6 +221,13 @@ export const getLessons = (id: ID): Promise<Lesson[]> => api<Lesson[]>(`/api/sub
 export const getLessonContent = (id: ID, path: string): Promise<LessonContent> =>
   api<LessonContent>(`/api/subjects/${id}/lessons/content?path=${encodeURIComponent(path)}`);
 
+export const renameLesson = (id: ID, title: string): Promise<Lesson> =>
+  send('PATCH', `/api/lessons/${id}`, { title });
+
+// also deletes the lesson's questions, attempts and review schedule, and its HTML file; 404 for an unknown id
+export const deleteLesson = (id: ID): Promise<{ ok: boolean }> =>
+  send<{ ok: boolean }>('DELETE', `/api/lessons/${id}`);
+
 // ---- chat ----
 
 export const getSessions = (id: ID): Promise<ChatSession[]> =>

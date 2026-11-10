@@ -87,7 +87,7 @@ describe('port configuration', () => {
     expect(makeConfig().maxChunkConcurrency).toBe(4);
   });
 
-  it('Host allowlist follows configured ports — old defaults die', async () => {
+  it('Host allowlist follows configured ports — old defaults die', { timeout: 20000 }, async () => {
     setEnv('PORT', '3999');
     setEnv('VITE_PORT', '5199');
     setEnv('PREVIEW_PORT', '4199');

@@ -41,6 +41,34 @@ export function extractTitle(html: string, fallback: string): string {
   return decoded || fallback;
 }
 
+/** Escape a plain title for HTML text content. */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Retitle a lesson's HTML in place: first <title>, else a <title> in <head>,
+ * plus the first <h1> text. A boot re-index reads these, so the file must match.
+ */
+export function rewriteLessonTitle(html: string, title: string): string {
+  const escaped = escapeHtml(title);
+  let out = html;
+  if (/<title\b[^>]*>[\s\S]*?<\/title>/i.test(out)) {
+    out = out.replace(/<title\b[^>]*>[\s\S]*?<\/title>/i, () => `<title>${escaped}</title>`);
+  } else {
+    out = out.replace(/<head\b[^>]*>/i, (head) => `${head}<title>${escaped}</title>`);
+  }
+  return out.replace(
+    /<h1\b([^>]*)>[\s\S]*?<\/h1>/i,
+    (_m, attrs: string) => `<h1${attrs}>${escaped}</h1>`,
+  );
+}
+
 /** Snapshot of lessons/ as relPath → mtime ISO. */
 export async function snapshotLessons(subject: SubjectRow): Promise<Map<string, string>> {
   const dir = path.join(subject.path, 'lessons');

@@ -1,4 +1,4 @@
-import { describe, expect, it, afterEach } from 'vitest';
+import { describe, expect, it, afterEach, vi } from 'vitest';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { makeHarness } from './helpers';
@@ -184,7 +184,8 @@ describe('setup run SSE + agent status', () => {
     await mkdir(path.join(root, 'lessons'), { recursive: true });
     await writeFile(path.join(root, 'lessons', '0001.html'), '<html><title>L1</title></html>');
     release();
-    await new Promise((r) => setTimeout(r, 50)); // let the fire-and-forget settle
+    // wait for the fire-and-forget run to settle instead of a fixed sleep (raced under load)
+    await vi.waitFor(() => expect(setupEvents[1]).toBeDefined(), { timeout: 3000 });
     expect(setupEvents[1]).toEqual({ state: 'done', subjectId: id, subjectName: 'SSE1', lessons: 1 });
 
     const idle = await h.app.inject({ method: 'GET', url: '/api/agent/status' });

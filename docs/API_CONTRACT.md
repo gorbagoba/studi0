@@ -237,6 +237,13 @@ No files are copied or moved (AC1).
 `GET /api/subjects/:id/lessons/content?path=lessons/0007-dijkstra.html` — hot-reload: poll this while the viewer is open; skip re-render while `updatedAt` is unchanged.
 → `200 LessonContent` · `404 FILE_NOT_FOUND` · `400 PATH_TRAVERSAL`
 
+`DELETE /api/lessons/:id` — deletes the lesson row, its questions and their attempts/schedule rows, then removes the lesson HTML file inside the subject (never outside it). A missing file is fine — the DB delete is the source of truth. Chat sessions linked to the lesson survive with `lessonId: null`.
+→ `200 { ok: true }` · `404 FILE_NOT_FOUND`
+
+`PATCH /api/lessons/:id` — renames a lesson; title is trimmed and HTML tags/angle brackets are stripped, then must be 1–200 chars. Updates the row and the lesson HTML (first `<title>`/`<h1>`, or inserts a `<title>` in `<head>`) so a boot re-index keeps the new name.
+`{ title: string }`
+→ `200 Lesson` · `400 VALIDATION` · `404 FILE_NOT_FOUND`
+
 ### Chat
 
 `GET /api/subjects/:id/chat/sessions`

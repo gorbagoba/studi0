@@ -26,6 +26,15 @@ export function lessonToDto(row: LessonRow): Lesson {
   };
 }
 
+export function updateLessonTitle(db: Db, id: string, title: string): LessonRow | null {
+  db.prepare('UPDATE lessons SET title = ?, updated_at = ? WHERE id = ?').run(
+    title,
+    new Date().toISOString(),
+    id,
+  );
+  return getLesson(db, id);
+}
+
 /** Mark a lesson as review-passed (tick in the UI); null clears it. */
 export function setReviewed(db: Db, lessonId: string, reviewedAt: string | null): void {
   db.prepare('UPDATE lessons SET reviewed_at = ? WHERE id = ?').run(reviewedAt, lessonId);
@@ -58,6 +67,34 @@ export function upsertLesson(
 
 export function getLesson(db: Db, id: string): LessonRow | null {
   return (db.prepare('SELECT * FROM lessons WHERE id = ?').get(id) ?? null) as unknown as LessonRow | null;
+}
+
+/** Delete a lesson with its questions and their attempts/schedule rows; returns the row (for its file path). */
+export function deleteLesson(db: Db, id: string): LessonRow | null {
+  // attempts/schedule have no ON DELETE CASCADE and FKs are on, so they must go first
+  db.exec('BEGIN');
+  try {
+    const row = getLesson(db, id);
+    if (!row) {
+      db.exec('COMMIT');
+      return null;
+    }
+    // chat sessions outlive their lesson; the FK would otherwise block the delete
+    db.prepare('UPDATE chat_sessions SET lesson_id = NULL WHERE lesson_id = ?').run(id);
+    db.prepare(
+      'DELETE FROM attempts WHERE question_id IN (SELECT id FROM questions WHERE lesson_id = ?)',
+    ).run(id);
+    db.prepare(
+      'DELETE FROM schedule WHERE question_id IN (SELECT id FROM questions WHERE lesson_id = ?)',
+    ).run(id);
+    db.prepare('DELETE FROM questions WHERE lesson_id = ?').run(id);
+    db.prepare('DELETE FROM lessons WHERE id = ?').run(id);
+    db.exec('COMMIT');
+    return row;
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
 }
 
 /** Ordered by filename prefix â€” the agent numbers lessons along the syllabus spine. */

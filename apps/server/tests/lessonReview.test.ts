@@ -1,7 +1,12 @@
 import { describe, expect, it, afterEach } from 'vitest';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { makeHarness } from './helpers';
 import * as lessonsRepo from '../src/db/repos/lessons.js';
 import * as questionsRepo from '../src/db/repos/questions.js';
+import * as attemptsRepo from '../src/db/repos/attempts.js';
+import * as chatRepo from '../src/db/repos/chat.js';
+import { requireSubject } from '../src/subjects/service.js';
 
 let h: Awaited<ReturnType<typeof makeHarness>>;
 
@@ -190,5 +195,129 @@ describe('lesson review one-shot submit (learner-centric wave)', () => {
     // partial is not all-correct → retry
     expect(body.verdict).toBe('retry');
     expect(body.reviewedAt).toBeNull();
+  });
+});
+
+describe('lesson delete', () => {
+  it('deletes a lesson with its questions/attempts and removes the HTML file', async () => {
+    h = await makeHarness();
+    const id = await createSubject('D1');
+    const lesson = lessonsRepo.upsertLesson(h.ctx.db, id, 'lessons/0001-heaps.html', 'Heaps', []);
+    const abs = path.join(requireSubject(h.ctx.db, id).path, lesson.rel_path);
+    await mkdir(path.dirname(abs), { recursive: true });
+    await writeFile(abs, '<html><body>heaps</body></html>');
+    const qId = insertMcq(id, lesson.id);
+    attemptsRepo.insertAttempt(h.ctx.db, qId, id, 'a', { verdict: 'correct', feedback: 'ok' });
+
+    const res = await h.app.inject({ method: 'DELETE', url: `/api/lessons/${lesson.id}` });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true });
+    expect(lessonsRepo.getLesson(h.ctx.db, lesson.id)).toBeNull();
+    expect(questionsRepo.getQuestion(h.ctx.db, qId)).toBeNull();
+    const list = await h.app.inject({ method: 'GET', url: `/api/subjects/${id}/lessons` });
+    expect(list.json()).toEqual([]);
+    await expect(stat(abs)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('404s deleting an unknown lesson', async () => {
+    h = await makeHarness();
+    const res = await h.app.inject({
+      method: 'DELETE',
+      url: '/api/lessons/f0000000-0000-4000-8000-000000000000',
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error.code).toBe('FILE_NOT_FOUND');
+  });
+
+  it('deletes cleanly when the lesson file is already missing', async () => {
+    h = await makeHarness();
+    const id = await createSubject('D3');
+    const lesson = lessonsRepo.upsertLesson(h.ctx.db, id, 'lessons/0003-gone.html', 'Gone', []);
+    const res = await h.app.inject({ method: 'DELETE', url: `/api/lessons/${lesson.id}` });
+    expect(res.statusCode).toBe(200);
+    expect(lessonsRepo.getLesson(h.ctx.db, lesson.id)).toBeNull();
+  });
+
+  it('keeps a linked chat session and clears its lesson_id', async () => {
+    h = await makeHarness();
+    const id = await createSubject('D4');
+    const lesson = lessonsRepo.upsertLesson(h.ctx.db, id, 'lessons/0004-chat.html', 'Chat', []);
+    const session = chatRepo.insertSession(h.ctx.db, id, 'oc-test', lesson.id);
+    const res = await h.app.inject({ method: 'DELETE', url: `/api/lessons/${lesson.id}` });
+    expect(res.statusCode).toBe(200);
+    expect(chatRepo.getSession(h.ctx.db, session.id)).toMatchObject({ lesson_id: null });
+  });
+});
+
+async function rename(lessonId: string, payload: { title: string }) {
+  return await h.app.inject({ method: 'PATCH', url: `/api/lessons/${lessonId}`, payload });
+}
+
+async function lessonFile(name: string, html: string) {
+  const id = await createSubject(name);
+  const lesson = lessonsRepo.upsertLesson(h.ctx.db, id, `lessons/${name}.html`, 'Old', []);
+  const abs = path.join(requireSubject(h.ctx.db, id).path, lesson.rel_path);
+  await mkdir(path.dirname(abs), { recursive: true });
+  await writeFile(abs, html);
+  return { lesson, abs };
+}
+
+describe('lesson rename', () => {
+  it('updates the DB row and the file title/h1', async () => {
+    h = await makeHarness();
+    const { lesson, abs } = await lessonFile(
+      'N1',
+      '<html><head><title>Old</title></head><body><h1 class="t">Old</h1></body></html>',
+    );
+    const res = await rename(lesson.id, { title: '  Heaps & <b>Priority Queues</b>  ' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().title).toBe('Heaps & Priority Queues');
+    expect(lessonsRepo.getLesson(h.ctx.db, lesson.id)?.title).toBe('Heaps & Priority Queues');
+    const html = await readFile(abs, 'utf8');
+    expect(html).toContain('<title>Heaps &amp; Priority Queues</title>');
+    expect(html).toContain('<h1 class="t">Heaps &amp; Priority Queues</h1>');
+  });
+
+  it('inserts a <title> in <head> when the file has none', async () => {
+    h = await makeHarness();
+    const { lesson, abs } = await lessonFile(
+      'N2',
+      '<html><head><meta charset="utf-8"></head><body><p>x</p></body></html>',
+    );
+    const res = await rename(lesson.id, { title: 'Fresh' });
+    expect(res.statusCode).toBe(200);
+    expect(await readFile(abs, 'utf8')).toContain(
+      '<head><title>Fresh</title><meta charset="utf-8"></head>',
+    );
+  });
+
+  it('updates the DB and still returns the DTO when the lesson file is missing', async () => {
+    h = await makeHarness();
+    const id = await createSubject('N3');
+    const lesson = lessonsRepo.upsertLesson(h.ctx.db, id, 'lessons/0003-gone.html', 'Old', []);
+    const res = await rename(lesson.id, { title: 'Gone' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().title).toBe('Gone');
+    expect(lessonsRepo.getLesson(h.ctx.db, lesson.id)?.title).toBe('Gone');
+  });
+
+  it.each([
+    ['empty', '   '],
+    ['oversized', 'x'.repeat(201)],
+    ['html-only', '<b></b>'],
+  ])('rejects a %s title with 400 VALIDATION', async (_label, title) => {
+    h = await makeHarness();
+    const id = await createSubject('N4');
+    const lesson = lessonsRepo.upsertLesson(h.ctx.db, id, 'lessons/0004-bad.html', 'Old', []);
+    const res = await rename(lesson.id, { title });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe('VALIDATION');
+  });
+
+  it('404s renaming an unknown lesson', async () => {
+    h = await makeHarness();
+    const res = await rename('f0000000-0000-4000-8000-000000000000', { title: 'Nope' });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error.code).toBe('FILE_NOT_FOUND');
   });
 });
