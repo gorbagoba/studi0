@@ -9,6 +9,8 @@ export interface OneshotOpts {
   agent?: string;
   /** override the kill timeout — whole-course generation needs far more than oneshotTimeoutMs */
   timeoutMs?: number;
+  /** `opencode run --model`; unset = the global default model */
+  model?: string;
 }
 
 /**
@@ -28,6 +30,7 @@ export const makeOneshot =
     // --standalone: private server inside the kill-tree (same as pipeline runner);
     // --agent: the default agent is plan-only and would never execute writes
     const args = ['run', '--auto'];
+    if (opts.model) args.push('--model', opts.model);
     if (opts.agent) args.push('--agent', opts.agent);
     args.push('--standalone', prompt);
     const { done, child } = spawnArgs(args, cwd);

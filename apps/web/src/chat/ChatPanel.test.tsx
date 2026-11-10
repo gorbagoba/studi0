@@ -65,6 +65,90 @@ describe('ChatPanel session-list flow', () => {
   });
 });
 
+describe('ChatPanel preference questions', () => {
+  let handlers: ChatStreamHandlers | null = null;
+  let releaseStream: (() => void) | null = null;
+
+  const BLOCK =
+    '```studi0-questions\n' +
+    JSON.stringify({
+      questions: [
+        { id: 'pace', prompt: 'How long until your exam?', options: ['<1 week', '1-4 weeks', 'Semester+'] },
+        { id: 'style', prompt: 'Examples first or theory first?' },
+      ],
+    }) +
+    '\n```';
+
+  beforeEach(() => {
+    handlers = null;
+    releaseStream = null;
+    vi.mocked(postChatStream).mockImplementation((_sessionId, _body, h) => {
+      handlers = h;
+      return new Promise<void>((resolve) => {
+        releaseStream = resolve;
+      });
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.mocked(postChatStream).mockReset();
+  });
+
+  async function startTurn(): Promise<void> {
+    renderPanel({ subjectId: 's1', lessonId: 'l1' });
+    const box = await screen.findByRole('textbox', { name: 'Message the teacher' });
+    fireEvent.change(box, { target: { value: 'hi' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(handlers).not.toBeNull());
+  }
+
+  async function finishTurn(text: string): Promise<void> {
+    act(() => handlers!.onToken!(text));
+    act(() => handlers!.onDone!({ messageCount: 2 }));
+    await act(async () => releaseStream!());
+  }
+
+  it('renders the form under the message, gates submit, and sends composed answers', async () => {
+    await startTurn();
+    await finishTurn('Quick check-in.\n\n' + BLOCK);
+
+    expect(screen.getByText('Quick check-in.')).toBeTruthy();
+    expect(screen.queryByText(/studi0-questions/)).toBeNull();
+    expect(screen.getByText('How long until your exam?')).toBeTruthy();
+    expect(screen.getByRole('radio', { name: '1-4 weeks' })).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: 'Examples first or theory first?' })).toBeTruthy();
+
+    expect((screen.getByRole('button', { name: 'Send answers' }) as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole('radio', { name: '1-4 weeks' }));
+    expect((screen.getByRole('button', { name: 'Send answers' }) as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Examples first or theory first?' }), {
+      target: { value: 'Examples first' },
+    });
+    expect((screen.getByRole('button', { name: 'Send answers' }) as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send answers' }));
+
+    expect(await screen.findByText('Answers sent')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Send answers' })).toBeNull();
+    await waitFor(() => expect(vi.mocked(postChatStream).mock.calls.length).toBe(2));
+    expect(vi.mocked(postChatStream).mock.calls[1][1].content).toBe(
+      'Answers to your questions:\n1. How long until your exam? — 1-4 weeks\n2. Examples first or theory first? — Examples first',
+    );
+  });
+
+  it('never shows the raw block while streaming', async () => {
+    await startTurn();
+    act(() => handlers!.onToken!('Before\n```studi0-questions\n{"questions":[{"id":"pace"'));
+    expect(screen.getByText('Before')).toBeTruthy();
+    expect(screen.queryByText(/studi0-questions/)).toBeNull();
+    act(() => handlers!.onDone!({ messageCount: 1 }));
+    await act(async () => releaseStream!());
+  });
+});
+
 describe('ChatPanel tool activity', () => {
   let handlers: ChatStreamHandlers | null = null;
   let releaseStream: (() => void) | null = null;

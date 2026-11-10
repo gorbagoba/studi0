@@ -7,6 +7,8 @@ import { CitationText } from '../lesson/CitationText';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { useApp } from '../state/app';
 import { SessionList } from './SessionList';
+import { extractQuestions, QUESTIONS_FENCE } from './questions';
+import type { QuestionsBlock } from './questions';
 
 type LogItem =
   | { kind: 'message'; message: ChatMessage }
@@ -43,6 +45,9 @@ export function ChatPanel({
   const streamRef = useRef('');
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // answers are keyed by message id so each question form keeps its own state
+  const [answers, setAnswers] = useState<Record<string, Record<string, string>>>({});
+  const [sentAnswers, setSentAnswers] = useState<Record<string, boolean>>({});
   const [booting, setBooting] = useState(true);
   // subject-level chats start on the session list; entering one reveals the conversation
   const [entered, setEntered] = useState(false);
@@ -232,6 +237,20 @@ export function ChatPanel({
     void send();
   }
 
+  function answerFor(messageId: string, questionId: string): string {
+    return answers[messageId]?.[questionId] ?? '';
+  }
+
+  function setAnswer(messageId: string, questionId: string, value: string): void {
+    setAnswers((all) => ({ ...all, [messageId]: { ...all[messageId], [questionId]: value } }));
+  }
+
+  async function answerQuestions(messageId: string, block: QuestionsBlock): Promise<void> {
+    const lines = block.questions.map((q, i) => `${i + 1}. ${q.prompt} — ${answerFor(messageId, q.id)}`);
+    setSentAnswers((all) => ({ ...all, [messageId]: true }));
+    await send(`Answers to your questions:\n${lines.join('\n')}`);
+  }
+
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>): void {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -240,6 +259,8 @@ export function ChatPanel({
   }
 
   const listing = showSessions && !entered;
+  // never flash a half-streamed questions block: hide everything from the fence marker on
+  const streamDisplay = (streamText ?? '').split(QUESTIONS_FENCE)[0] ?? '';
 
   return (
     <section className="chat" aria-label={lessonId !== undefined ? 'Lesson chat' : 'Subject chat'}>
@@ -311,30 +332,88 @@ export function ChatPanel({
             {log.length === 0 && !streaming && (
               <p className="muted">No messages yet — ask anything about this subject.</p>
             )}
-            {log.map((item, i) =>
-              item.kind === 'message' ? (
+            {log.map((item, i) => {
+              if (item.kind !== 'message') {
+                return (
+                  <p key={i} className="msg-note">
+                    {item.text}{' '}
+                    {item.lessonPath !== undefined && (
+                      <button className="btn btn-small" onClick={() => openLesson(item.lessonPath as string)}>
+                        Open lesson
+                      </button>
+                    )}
+                  </p>
+                );
+              }
+              const extracted =
+                item.message.role === 'assistant' ? extractQuestions(item.message.text) : null;
+              const questions = extracted?.questions ?? null;
+              const answersFor = answers[item.message.id] ?? {};
+              const complete =
+                questions !== null &&
+                questions.questions.every((q) => (answersFor[q.id] ?? '').trim() !== '');
+              return (
                 <article key={i} className={`msg msg-${item.message.role}`}>
                   <span className="msg-role">{item.message.role === 'user' ? 'You' : 'Teacher'}</span>
                   <div className="msg-text">
-                    <CitationText text={item.message.text} />
+                    <CitationText text={extracted?.visibleText ?? item.message.text} />
                   </div>
+                  {questions !== null &&
+                    (sentAnswers[item.message.id] === true ? (
+                      <p className="msg-note">Answers sent</p>
+                    ) : (
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          if (complete) void answerQuestions(item.message.id, questions);
+                        }}
+                      >
+                        {questions.questions.map((q) => (
+                          <fieldset key={q.id}>
+                            <legend>{q.prompt}</legend>
+                            {q.options !== undefined && q.options.length > 0 ? (
+                              q.options.map((option, oi) => {
+                                const id = `${item.message.id}-${q.id}-${oi}`;
+                                return (
+                                  <div key={oi} className="radio-row">
+                                    <input
+                                      type="radio"
+                                      id={id}
+                                      name={`${item.message.id}-${q.id}`}
+                                      value={option}
+                                      checked={answersFor[q.id] === option}
+                                      onChange={() => setAnswer(item.message.id, q.id, option)}
+                                      disabled={streaming}
+                                    />
+                                    <label htmlFor={id}>{option}</label>
+                                  </div>
+                                );
+                              })
+                            ) : (
+                              <input
+                                aria-label={q.prompt}
+                                value={answersFor[q.id] ?? ''}
+                                onChange={(e) => setAnswer(item.message.id, q.id, e.target.value)}
+                                disabled={streaming}
+                              />
+                            )}
+                          </fieldset>
+                        ))}
+                        <div className="btn-row">
+                          <button type="submit" className="btn-primary" disabled={!complete || streaming}>
+                            Send answers
+                          </button>
+                        </div>
+                      </form>
+                    ))}
                 </article>
-              ) : (
-                <p key={i} className="msg-note">
-                  {item.text}{' '}
-                  {item.lessonPath !== undefined && (
-                    <button className="btn btn-small" onClick={() => openLesson(item.lessonPath as string)}>
-                      Open lesson
-                    </button>
-                  )}
-                </p>
-              ),
-            )}
+              );
+            })}
             {streaming && (
               <article className="msg msg-assistant">
                 <span className="msg-role">Teacher</span>
                 <div className="msg-text">
-                  {streamText === '' ? (
+                  {streamText === '' || streamDisplay === '' ? (
                     <span className="thinking" aria-label={tool === null ? 'Teacher is thinking' : undefined}>
                       {tool !== null && (
                         <span className="thinking-label">{TOOL_LABELS[tool] ?? 'Working…'}</span>
@@ -344,7 +423,7 @@ export function ChatPanel({
                       <span className="dot" />
                     </span>
                   ) : (
-                    <CitationText text={streamText ?? ''} />
+                    <CitationText text={streamDisplay} />
                   )}
                 </div>
               </article>

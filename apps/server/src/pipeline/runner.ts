@@ -17,7 +17,7 @@ import type { Db } from '../db/index.js';
 import type { EventBus } from '../http/sse.js';
 import type { JobRow } from '../db/repos/jobs.js';
 import type { SubjectRow } from '../db/repos/subjects.js';
-import type { OneshotFn } from '../util/oneshot.js';
+import { makeOneshot } from '../util/oneshot.js';
 import type { Config } from '../config.js';
 
 export interface PipelineUpdate {
@@ -55,8 +55,10 @@ export function killJob(jobId: string): void {
  * original single-run pipeline.
  */
 export const makeRunPipeline =
-  (oneshot: OneshotFn, db: Db, cfg: Config, events?: EventBus): RunPipelineFn =>
+  (db: Db, cfg: Config, events?: EventBus): RunPipelineFn =>
   async (job, subject, onUpdate, signal) => {
+    // verification is a few calls — it can afford the thinking model
+    const verifyOneshot = makeOneshot(cfg, { model: cfg.graphVerifyModel });
     const startedAt = Date.now();
     // every protocol/raw line lands in build.log AND the subject SSE stream (same text)
     const log = (message: string) => {
@@ -136,7 +138,7 @@ export const makeRunPipeline =
     ): Promise<PipelineOutcome> => {
       log('verification pass started');
       try {
-        const report = await oneshot(subject.path, VERIFICATION_PROMPT, signal);
+        const report = await verifyOneshot(subject.path, VERIFICATION_PROMPT, signal);
         await safeWriteFile(
           path.join(subject.path, 'graphify-out', 'VERIFY_REPORT.md'),
           report.trim() + '\n',
@@ -163,6 +165,8 @@ export const makeRunPipeline =
       const child = spawnChild([
         'run',
         '--auto',
+        '--model',
+        cfg.graphExtractModel,
         '--agent',
         'studi0-pipeline',
         '--standalone',
@@ -238,6 +242,8 @@ export const makeRunPipeline =
       const planChild = spawnChild([
         'run',
         '--auto',
+        '--model',
+        cfg.graphPlanModel,
         '--agent',
         'studi0-pipeline',
         '--standalone',
@@ -264,6 +270,8 @@ export const makeRunPipeline =
         const child = spawnChild([
           'run',
           '--auto',
+          '--model',
+          cfg.graphExtractModel,
           '--agent',
           'studi0-pipeline',
           '--standalone',
@@ -298,6 +306,8 @@ export const makeRunPipeline =
       const mergeChild = spawnChild([
         'run',
         '--auto',
+        '--model',
+        cfg.graphMergeModel,
         '--agent',
         'studi0-pipeline',
         '--standalone',

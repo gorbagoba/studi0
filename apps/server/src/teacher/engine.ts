@@ -14,6 +14,7 @@ import { hybridSearch } from '../retrieval/search.js';
 import { ensureIndex } from '../retrieval/index.js';
 import { HttpError } from '../util/errors.js';
 import { streamCompletion, chatCompletion, type LlmMessage, type ToolCallAccum } from './llm.js';
+import { renderLessonPng } from './render.js';
 import type { Db } from '../db/index.js';
 import type { Config } from '../config.js';
 import type { EventBus, Send } from '../http/sse.js';
@@ -39,8 +40,13 @@ const READ_MAX_CHARS = 200_000;
 const GRAPHIFY_TIMEOUT_MS = 30_000;
 const LESSON_EVIDENCE_MAX_CHARS = 8_000;
 const LESSON_MISSION_MAX_CHARS = 2_000;
+/** one answers payload per call — a form reply never needs more */
+const MISSION_ANSWERS_MAX_CHARS = 4_000;
+const MISSION_ANSWERS_HEADING = '## Student answers (from chat)';
 /** the lesson writer is slow (one ~60s completion on big lessons) but bounded */
 const LESSON_WRITER_TIMEOUT_MS = 10 * 60_000;
+/** render-review rounds after the first write — bounded so a bad reviewer cannot loop */
+const MAX_LESSON_REVIEW_ROUNDS = 2;
 
 export interface NativeTurnDeps {
   db: Db;
@@ -82,6 +88,12 @@ You are not running inside opencode here: there is no shell, no bash and no file
 - graphify_query { "query" } — one knowledge-graph query (BFS over graph.json). Skip while the server says the graph is rebuilding.
 - save_quiz { "spec" } — deposit a quiz directly; spec is the same JSON as a \`\`\`studi0-quiz\`\`\` block (topic + questions[]). Prefer this over the fenced block.
 - update_corrections { "entry" } — append one correction bullet to corrections.md.
+- save_mission_answers { "answers" } — persist the student's preference answers into MISSION.md (call this BEFORE replying after the student answers your studi0-questions form).
+
+Preferences: when you need preferences that MISSION.md does not already answer, ask them all in ONE message as a \`\`\`studi0-questions\`\`\` fenced JSON block (\`{"questions":[{"id","prompt","options"?}]}\`) and keep the prose short. Never ask questions you can answer from MISSION.md or the material. After the student replies with answers, call save_mission_answers, then continue.
+
+Lesson policy: if this subject already has lessons, you must NOT create new lesson files — read them and improve the existing one(s) instead (write_lesson on an existing path replaces its content; generate_lesson on an existing path regenerates it).
+Only create a new lesson file when the subject has no lessons at all.
 
 Quizzes appended as \`\`\`studi0-quiz\`\`\` text blocks still work. Reply text remains the student-facing channel: after any tool rounds, write the final answer as normal text.`;
 
@@ -90,7 +102,8 @@ const NATIVE_TOOLS = [
     type: 'function',
     function: {
       name: 'write_lesson',
-      description: 'Write or overwrite a lesson file under lessons/.',
+      description:
+        'Write or overwrite a lesson file under lessons/. Never a new file when this subject already has lessons — pass an existing lesson path.',
       parameters: {
         type: 'object',
         properties: {
@@ -106,7 +119,7 @@ const NATIVE_TOOLS = [
     function: {
       name: 'generate_lesson',
       description:
-        'Delegate writing a complete lesson to the lesson writer model (slow, highest quality). Use instead of authoring big HTML yourself.',
+        'Delegate writing a complete lesson to the lesson writer model (slow, highest quality). Use instead of authoring big HTML yourself. Never a new file when this subject already has lessons — pass an existing lesson path.',
       parameters: {
         type: 'object',
         properties: {
@@ -194,6 +207,18 @@ const NATIVE_TOOLS = [
         type: 'object',
         properties: { entry: { type: 'string' } },
         required: ['entry'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'save_mission_answers',
+      description: "Persist the student's preference answers into MISSION.md.",
+      parameters: {
+        type: 'object',
+        properties: { answers: { type: 'string' } },
+        required: ['answers'],
       },
     },
   },
@@ -344,6 +369,8 @@ async function executeTool(
       return saveQuiz(deps, subject, lesson, send, args);
     case 'update_corrections':
       return updateCorrections(subject, args);
+    case 'save_mission_answers':
+      return saveMissionAnswers(subject, args);
     default:
       return { ok: false, error: `unknown tool: ${call.name}` };
   }
@@ -353,6 +380,20 @@ async function executeTool(
 function assertLessonPath(rel: string, tool: string): void {
   if (!LESSON_PATH_RE.test(rel)) {
     throw new HttpError('VALIDATION', `${tool} path must match lessons/NNNN-slug.html, got: ${rel}`);
+  }
+}
+
+/**
+ * Lesson policy: a subject that already has lessons may only rewrite one of them.
+ * Brand-new lesson files are allowed only while the subject has no lessons at all.
+ */
+function assertLessonWriteAllowed(deps: NativeTurnDeps, subject: SubjectRow, rel: string): void {
+  const existing = lessonsRepo.listLessons(deps.db, subject.id).map((l) => l.rel_path);
+  if (existing.length > 0 && !existing.includes(rel)) {
+    throw new HttpError(
+      'VALIDATION',
+      `lessons already exist — edit one of: ${existing.slice(0, 5).join(', ')}; do not create new lesson files`,
+    );
   }
 }
 
@@ -366,6 +407,7 @@ async function writeLesson(
   const rel = typeof args.path === 'string' ? args.path : '';
   const html = typeof args.html === 'string' ? args.html : '';
   assertLessonPath(rel, 'write_lesson');
+  assertLessonWriteAllowed(deps, subject, rel);
   return writeLessonFile(deps, subject, before, send, rel, html);
 }
 
@@ -378,22 +420,59 @@ async function writeLessonFile(
   rel: string,
   html: string,
 ): Promise<ToolResult> {
+  await writeLessonHtml(subject, rel, html);
+  await indexLessonFile(deps, subject, before, send);
+  return { ok: true, path: rel };
+}
+
+async function writeLessonHtml(subject: SubjectRow, rel: string, html: string): Promise<void> {
   await safeWriteFile(safeResolve(subject.path, rel), html);
-  // index + emit immediately; the end-of-turn safety net skips these (before is synced)
+}
+
+/** Index + emit once for whatever changed since `before` (the safety net skips these). */
+async function indexLessonFile(
+  deps: NativeTurnDeps,
+  subject: SubjectRow,
+  before: Map<string, string>,
+  send: Send,
+): Promise<void> {
   const rows = await detectAndIndexLessons(deps.db, subject, before, deps.events);
   for (const row of rows) {
     send('lesson', lessonsRepo.lessonToDto(row));
     deps.feedQuestions(subject, row);
   }
-  return { ok: true, path: rel };
 }
 
-const LESSON_WRITER_SYSTEM =
-  'You are the lesson writer. Output ONLY a complete self-contained HTML lesson document starting with <!DOCTYPE html> and ending with </html>. No markdown fences, no commentary.';
+const LESSON_VISUAL_RULES = `
+VISUAL RULES (the reader must grasp each idea at a glance):
+- Draw every figure as inline SVG — no external images, no CDNs, no <img> tags.
+- ONE idea per figure.
+- Label the parts (arrows and text) so the figure is readable without the prose.
+- A one-sentence caption under every figure stating its takeaway.
+- Simple shapes, high contrast, no decorative clutter; a few clear diagrams beat many.`;
+
+const LESSON_WRITER_SYSTEM = `You are the lesson writer. Output ONLY a complete self-contained HTML lesson document starting with <!DOCTYPE html> and ending with </html>. No markdown fences, no commentary.${LESSON_VISUAL_RULES}`;
+
+const LESSON_REVIEW_SYSTEM =
+  'You are reviewing the rendered lesson. If any visual is unclear, cluttered, mislabeled or does not make its idea graspable at a glance, return ONLY the complete revised HTML document. If every visual is already clear and simple, return exactly: OK';
+
+function stripFences(text: string): string {
+  return text
+    .trim()
+    .replace(/^```(?:html)?\s*/i, '')
+    .replace(/```$/, '')
+    .trim();
+}
+
+function isCompleteLesson(html: string): boolean {
+  return /<!doctype html>/i.test(html) && /<\/html>/i.test(html);
+}
 
 /**
  * Delegate lesson authoring to the stronger quality-first model as plain content
  * (tool-call arguments truncate big HTML on our gateways), then save it here.
+ * The draft is rendered headlessly and the model reviews the screenshot for
+ * visual clarity; indexing/SSE happen once, after the final version.
  */
 async function generateLesson(
   deps: NativeTurnDeps,
@@ -406,6 +485,7 @@ async function generateLesson(
   const rel = typeof args.path === 'string' ? args.path : '';
   const topic = typeof args.topic === 'string' ? args.topic.trim() : '';
   assertLessonPath(rel, 'generate_lesson');
+  assertLessonWriteAllowed(deps, subject, rel);
   if (!topic) return { ok: false, error: 'topic is required' };
 
   const { db, cfg } = deps;
@@ -454,15 +534,61 @@ ${evidence || '(none found — teach from general knowledge)'}`;
     AbortSignal.any([signal, AbortSignal.timeout(LESSON_WRITER_TIMEOUT_MS)]),
   )) as { choices?: { message?: { content?: string } }[] };
 
-  const html = (res.choices?.[0]?.message?.content ?? '')
-    .trim()
-    .replace(/^```html\s*/i, '')
-    .replace(/```$/, '')
-    .trim();
-  if (!/<!doctype html>/i.test(html) || !/<\/html>/i.test(html)) {
+  const html = stripFences(res.choices?.[0]?.message?.content ?? '');
+  if (!isCompleteLesson(html)) {
     return { ok: false, error: 'lesson HTML incomplete — retry with a narrower topic' };
   }
-  return writeLessonFile(deps, subject, before, send, rel, html);
+  await writeLessonHtml(subject, rel, html);
+
+  let rounds = 0;
+  let revisions = 0;
+  for (let i = 0; i < MAX_LESSON_REVIEW_ROUNDS; i++) {
+    const png = await renderLessonPng(subject.path, rel, { browserBin: cfg.browserBin });
+    if (!png) {
+      if (i === 0) console.log('[generate_lesson] no browser render — skipping visual review');
+      break;
+    }
+    rounds++;
+    const reviewMessages = [
+      { role: 'system', content: LESSON_REVIEW_SYSTEM },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: `Rendered lesson: ${rel}. Topic: ${topic}. Review the visuals.` },
+          { type: 'image_url', image_url: { url: `data:image/png;base64,${png.toString('base64')}` } },
+        ],
+      },
+    ] as unknown as LlmMessage[];
+    let reply: string;
+    try {
+      const reviewRes = (await chatCompletion(
+        writerCfg,
+        {
+          model: cfg.chatModelLesson,
+          messages: reviewMessages,
+          max_tokens: 16000,
+          chat_template_kwargs: cfg.chatLessonTemplateKwargs,
+        },
+        AbortSignal.any([signal, AbortSignal.timeout(LESSON_WRITER_TIMEOUT_MS)]),
+      )) as { choices?: { message?: { content?: string } }[] };
+      reply = (reviewRes.choices?.[0]?.message?.content ?? '').trim();
+    } catch (e) {
+      // a failed review must not lose the lesson that is already on disk
+      console.log(`[generate_lesson] review failed: ${String(e)}`);
+      break;
+    }
+    if (/^OK$/i.test(reply)) break;
+    const revised = stripFences(reply);
+    if (!isCompleteLesson(revised)) {
+      console.log('[generate_lesson] review returned incomplete HTML — keeping current version');
+      break;
+    }
+    await writeLessonHtml(subject, rel, revised);
+    revisions++;
+  }
+
+  await indexLessonFile(deps, subject, before, send);
+  return { ok: true, path: rel, rounds, revisions };
 }
 
 async function readMaterial(subject: SubjectRow, args: Record<string, unknown>): Promise<ToolResult> {
@@ -585,4 +711,24 @@ async function updateCorrections(subject: SubjectRow, args: Record<string, unkno
   const sep = prev && !prev.endsWith('\n') ? '\n' : '';
   await safeWriteFile(abs, `${prev}${sep}- ${entry}\n`);
   return { ok: true };
+}
+
+/** Append the student's form answers under a fixed heading directly under subjectPath. */
+async function saveMissionAnswers(subject: SubjectRow, args: Record<string, unknown>): Promise<ToolResult> {
+  const answers = (typeof args.answers === 'string' ? args.answers : '').trim().slice(0, MISSION_ANSWERS_MAX_CHARS);
+  const bullets = answers
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => `- ${line}`)
+    .join('\n');
+  if (!bullets) return { ok: false, error: 'answers is required' };
+  const abs = safeResolve(subject.path, 'MISSION.md');
+  const prev = await readFile(abs, 'utf8').catch(() => '');
+  const heading = prev.includes(MISSION_ANSWERS_HEADING)
+    ? ''
+    : `${prev.length === 0 ? '' : prev.endsWith('\n') ? '\n' : '\n\n'}${MISSION_ANSWERS_HEADING}\n`;
+  const sep = prev.length > 0 && !prev.endsWith('\n') && !heading ? '\n' : '';
+  await safeWriteFile(abs, `${prev}${heading}${sep}${bullets}\n`);
+  return { ok: true, path: 'MISSION.md' };
 }

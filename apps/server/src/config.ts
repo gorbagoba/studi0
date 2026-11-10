@@ -35,6 +35,13 @@ export interface Config {
   chatLessonTemplateKwargs: Record<string, unknown>;
   /** send chat_template_kwargs {enable_thinking:false} — off only when the gateway/model rejects it */
   chatDisableThinking: boolean;
+  /** headless browser for lesson render review (STUDI0_BROWSER_BIN); null = auto-detect */
+  browserBin: string | null;
+  /** per-stage graph pipeline models (`opencode run --model`); extraction is the high-volume stage */
+  graphPlanModel: string;
+  graphExtractModel: string;
+  graphMergeModel: string;
+  graphVerifyModel: string;
 }
 
 /** Lesson-writer template kwargs from JSON env; malformed input falls back (one warn). */
@@ -79,6 +86,11 @@ try {
       'CHAT_MODEL_LESSON',
       'CHAT_MODEL_LESSON_TEMPLATE_KWARGS',
       'CHAT_DISABLE_THINKING',
+      'STUDI0_BROWSER_BIN',
+      'STUDI0_GRAPH_PLAN_MODEL',
+      'STUDI0_GRAPH_EXTRACT_MODEL',
+      'STUDI0_GRAPH_MERGE_MODEL',
+      'STUDI0_GRAPH_VERIFY_MODEL',
     ]);
     if (KNOWN_ENV_KEYS.has(m[1]) && process.env[m[1]] === undefined) {
       process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
@@ -133,5 +145,11 @@ export function makeConfig(dataDir?: string): Config {
     chatLessonTemplateKwargs: parseLessonTemplateKwargs(process.env.CHAT_MODEL_LESSON_TEMPLATE_KWARGS),
     // chat templates ignore unknown kwargs, so opting out is only for gateways that reject them
     chatDisableThinking: !['false', '0'].includes((process.env.CHAT_DISABLE_THINKING ?? '').toLowerCase()),
+    browserBin: process.env.STUDI0_BROWSER_BIN ?? null,
+    // the global default model thinks always-on (50s+ per chunk); extraction needs a fast non-thinking model
+    graphPlanModel: process.env.STUDI0_GRAPH_PLAN_MODEL ?? 'soclaas/nemotron3.5:30b',
+    graphExtractModel: process.env.STUDI0_GRAPH_EXTRACT_MODEL ?? 'soclaas/nemotron3.5:30b',
+    graphMergeModel: process.env.STUDI0_GRAPH_MERGE_MODEL ?? 'soclaas/nemotron3.5:30b',
+    graphVerifyModel: process.env.STUDI0_GRAPH_VERIFY_MODEL ?? 'soclaas/x-test-2',
   };
 }

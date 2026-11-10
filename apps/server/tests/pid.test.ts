@@ -51,7 +51,7 @@ describe('job pid bookkeeping', () => {
       child: { kill: () => undefined, stdout: null, stderr: null },
     });
     const subject = { id: 'subject-1', name: 'S', path: dir } as never;
-    const outcome = await makeRunPipeline(async () => 'ok', db, makeConfig())(
+    const outcome = await makeRunPipeline(db, makeConfig())(
       job,
       subject,
       () => undefined,

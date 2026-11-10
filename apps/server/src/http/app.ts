@@ -49,7 +49,7 @@ export async function buildApp(opts: { dataDir?: string; dbPath?: string } = {})
   const oc = new OpencodeManager(cfg);
   const oneshot = makeOneshot(cfg);
   const teacherRun = makeOneshot(cfg, { agent: 'studi0-teacher', timeoutMs: cfg.setupRunTimeoutMs });
-  const runPipeline: RunPipelineFn = makeRunPipeline(oneshot, db, cfg, events);
+  const runPipeline: RunPipelineFn = makeRunPipeline(db, cfg, events);
   const queue = new JobQueue(db, events, cfg, runPipeline);
   const feedQuestions = makeFeedQuestions(db, events, oneshot);
 

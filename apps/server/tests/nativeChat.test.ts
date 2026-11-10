@@ -1,8 +1,9 @@
 import { describe, expect, it, afterEach, vi } from 'vitest';
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { makeHarness } from './helpers';
 import * as chatRepo from '../src/db/repos/chat.js';
+import * as lessonsRepo from '../src/db/repos/lessons.js';
 import { chatCompletion, streamCompletion, type StreamDelta } from '../src/teacher/llm.js';
 import { makeConfig, type Config } from '../src/config.js';
 import type { OcClient } from '../src/teacher/sdk.js';
@@ -10,6 +11,9 @@ import type { OcClient } from '../src/teacher/sdk.js';
 vi.mock('../src/retrieval/embed.js', () => ({
   embedTexts: vi.fn(async (texts: string[]) => texts.map(() => new Float32Array(384))),
 }));
+
+const { renderLessonPngMock } = vi.hoisted(() => ({ renderLessonPngMock: vi.fn() }));
+vi.mock('../src/teacher/render.js', () => ({ renderLessonPng: renderLessonPngMock }));
 
 const NATIVE_ENV = {
   CHAT_ENGINE: 'native',
@@ -22,6 +26,7 @@ let h: Awaited<ReturnType<typeof makeHarness>> | undefined;
 
 afterEach(async () => {
   vi.unstubAllGlobals();
+  renderLessonPngMock.mockReset();
   if (h) await h.close();
   h = undefined;
 });
@@ -436,6 +441,89 @@ describe('native chat engine', () => {
   });
 });
 
+describe('save_mission_answers tool', () => {
+  async function start(name: string): Promise<{ sessionId: string; root: string }> {
+    h = await makeHarness({ env: NATIVE_ENV });
+    const id = await createSubject(name);
+    patchOc(h);
+    h.ctx.feedQuestions = () => undefined;
+    const root = (h.ctx.db.prepare('SELECT path FROM subjects WHERE id = ?').get(id) as { path: string }).path;
+    const session = (
+      await h.app.inject({ method: 'POST', url: `/api/subjects/${id}/chat/sessions`, payload: {} })
+    ).json() as { id: string };
+    return { sessionId: session.id, root };
+  }
+
+  const toolCall = (answers: string) =>
+    sseResponse(
+      chunk({
+        tool_calls: [
+          {
+            index: 0,
+            id: 'a1',
+            function: { name: 'save_mission_answers', arguments: JSON.stringify({ answers }) },
+          },
+        ],
+      }),
+      chunk({}, 'tool_calls'),
+      DONE,
+    );
+  const finalText = () => sseResponse(chunk({ content: 'Saved.' }), chunk({}, 'stop'), DONE);
+  const ask = (sessionId: string) =>
+    h!.app.inject({
+      method: 'POST',
+      url: `/api/chat/sessions/${sessionId}/messages`,
+      payload: { content: 'Answers to your questions: 1. … — …' },
+    });
+
+  it('creates MISSION.md with the heading, then appends each call as another bullet', async () => {
+    const { sessionId, root } = await start('ChatMissionAnswers');
+    const calls = captureFetch([toolCall('Pace: exam in under a week'), finalText()]);
+    const res = await ask(sessionId);
+    expect(dataOf(res.body, 'tool')).toEqual([{ name: 'save_mission_answers', ok: true }]);
+
+    // the teacher prompt carries the form instruction and the tool line
+    const system = (JSON.parse(String(calls[0].init.body)) as { messages: { role: string; content: string }[] })
+      .messages[0].content;
+    expect(system).toContain('studi0-questions');
+    expect(system).toContain('save_mission_answers { "answers" }');
+
+    const file = path.join(root, 'MISSION.md');
+    await expect(readFile(file, 'utf8')).resolves.toBe(
+      '## Student answers (from chat)\n- Pace: exam in under a week\n',
+    );
+
+    captureFetch([toolCall('Style: examples first'), finalText()]);
+    await ask(sessionId);
+    const after = await readFile(file, 'utf8');
+    expect(after).toBe(
+      '## Student answers (from chat)\n- Pace: exam in under a week\n- Style: examples first\n',
+    );
+    expect(after.split('## Student answers (from chat)')).toHaveLength(2); // heading written once
+  });
+
+  it('creates MISSION.md when it is absent', async () => {
+    const { sessionId, root } = await start('ChatMissionMissing');
+    const file = path.join(root, 'MISSION.md');
+    await rm(file, { force: true });
+    captureFetch([toolCall('Pace: 1-4 weeks'), finalText()]);
+    const res = await ask(sessionId);
+    expect(dataOf(res.body, 'tool')).toEqual([{ name: 'save_mission_answers', ok: true }]);
+    await expect(readFile(file, 'utf8')).resolves.toBe(
+      '## Student answers (from chat)\n- Pace: 1-4 weeks\n',
+    );
+  });
+
+  it('caps oversized answers without crashing', async () => {
+    const { sessionId, root } = await start('ChatMissionHuge');
+    captureFetch([toolCall('x'.repeat(20_000)), finalText()]);
+    const res = await ask(sessionId);
+    expect(dataOf(res.body, 'tool')).toEqual([{ name: 'save_mission_answers', ok: true }]);
+    const size = (await stat(path.join(root, 'MISSION.md'))).size;
+    expect(size).toBeLessThan(5_000);
+  });
+});
+
 describe('generate_lesson (lesson writer delegation)', () => {
   const VALID_HTML =
     '<!DOCTYPE html><html><head><title>Heaps</title></head><body><h1>Heaps</h1></body></html>';
@@ -449,6 +537,13 @@ describe('generate_lesson (lesson writer delegation)', () => {
       await h.app.inject({ method: 'POST', url: `/api/subjects/${id}/chat/sessions`, payload: {} })
     ).json() as { id: string };
     return { id, sessionId: session.id, root };
+  }
+
+  /** Seed one already-indexed lesson so the subject counts as "has lessons". */
+  async function seedLesson(id: string, root: string, rel = 'lessons/0001-heaps.html') {
+    await mkdir(path.join(root, 'lessons'), { recursive: true });
+    await writeFile(path.join(root, rel), '<h1>existing</h1>');
+    lessonsRepo.upsertLesson(h!.ctx.db, id, rel, 'Heaps', []);
   }
 
   const toolCall = (name: string, args: object) =>
@@ -499,11 +594,141 @@ describe('generate_lesson (lesson writer delegation)', () => {
     expect(writer.chat_template_kwargs).toEqual({ thinking: false });
     expect(writer.messages[1].content).toContain('material/notes.md');
     expect(writer.messages[1].content).toContain('teach-back');
+    expect(writer.messages[0].content).toContain('VISUAL RULES');
+    expect(writer.messages[0].content).toContain('inline SVG');
 
     // the tool result fed back to the chat model
     const next = JSON.parse(String(calls[2].init.body)) as { messages: { role: string; content: string }[] };
     const toolMsg = next.messages.find((m) => m.role === 'tool');
     expect(JSON.parse(toolMsg?.content ?? '{}')).toMatchObject({ ok: true, path: 'lessons/0002-heaps.html' });
+  });
+
+  const ROUND1_HTML =
+    '<!DOCTYPE html><html><head><title>Heaps</title></head><body><h1>Heaps</h1><svg><text>root</text></svg></body></html>';
+  const REVISED_HTML =
+    '<!DOCTYPE html><html><head><title>Heaps</title></head><body><h1>Heaps</h1><svg><text>root (labeled)</text></svg></body></html>';
+
+  it('renders, reviews the screenshot, rewrites once and emits one lesson event', async () => {
+    const { sessionId, root } = await startSession('ChatGenReview');
+    renderLessonPngMock.mockResolvedValue(Buffer.from('png-bytes'));
+    let fed = 0;
+    h!.ctx.feedQuestions = () => {
+      fed++;
+    };
+    const calls = captureFetch([
+      toolCall('generate_lesson', { path: 'lessons/0001-heaps.html', topic: 'heaps' }),
+      writerResponse(ROUND1_HTML),
+      writerResponse(REVISED_HTML),
+      writerResponse('OK'),
+      finalText(),
+    ]);
+    const res = await h!.app.inject({
+      method: 'POST',
+      url: `/api/chat/sessions/${sessionId}/messages`,
+      payload: { content: 'write me a lesson on heaps' },
+    });
+    expect(dataOf(res.body, 'tool')).toEqual([{ name: 'generate_lesson', ok: true }]);
+    expect(eventsOf(res.body).filter((n) => n === 'lesson')).toHaveLength(1);
+    expect(fed).toBe(1);
+    await expect(readFile(path.join(root, 'lessons', '0001-heaps.html'), 'utf8')).resolves.toBe(REVISED_HTML);
+
+    // review request: reviewer system prompt + the rendered PNG as an image part
+    const review = JSON.parse(String(calls[2].init.body)) as {
+      messages: { role: string; content: unknown }[];
+    };
+    expect(review.messages[0].content).toContain('reviewing the rendered lesson');
+    const parts = review.messages[1].content as { type: string; image_url?: { url: string } }[];
+    expect(parts[0].type).toBe('text');
+    expect(parts[1].image_url?.url).toBe(
+      `data:image/png;base64,${Buffer.from('png-bytes').toString('base64')}`,
+    );
+
+    // rounds/revisions reported back to the chat model
+    const next = JSON.parse(String(calls[4].init.body)) as { messages: { role: string; content: string }[] };
+    expect(JSON.parse(next.messages.find((m) => m.role === 'tool')?.content ?? '{}')).toMatchObject({
+      ok: true,
+      rounds: 2,
+      revisions: 1,
+    });
+  });
+
+  it('stops without rewriting when the review replies OK', async () => {
+    const { sessionId, root } = await startSession('ChatGenReviewOk');
+    renderLessonPngMock.mockResolvedValue(Buffer.from('png'));
+    h!.ctx.feedQuestions = () => undefined;
+    const calls = captureFetch([
+      toolCall('generate_lesson', { path: 'lessons/0001-heaps.html', topic: 'heaps' }),
+      writerResponse(ROUND1_HTML),
+      writerResponse('OK'),
+      finalText(),
+    ]);
+    const res = await h!.app.inject({
+      method: 'POST',
+      url: `/api/chat/sessions/${sessionId}/messages`,
+      payload: { content: 'write it' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(calls).toHaveLength(4); // writer + one review, no rewrite call
+    await expect(readFile(path.join(root, 'lessons', '0001-heaps.html'), 'utf8')).resolves.toBe(ROUND1_HTML);
+    const next = JSON.parse(String(calls[3].init.body)) as { messages: { role: string; content: string }[] };
+    expect(JSON.parse(next.messages.find((m) => m.role === 'tool')?.content ?? '{}')).toMatchObject({
+      ok: true,
+      rounds: 1,
+      revisions: 0,
+    });
+  });
+
+  it('writes once and skips review when no browser can render', async () => {
+    const { sessionId, root } = await startSession('ChatGenNoRender');
+    renderLessonPngMock.mockResolvedValue(null);
+    h!.ctx.feedQuestions = () => undefined;
+    const calls = captureFetch([
+      toolCall('generate_lesson', { path: 'lessons/0001-heaps.html', topic: 'heaps' }),
+      writerResponse(ROUND1_HTML),
+      finalText(),
+    ]);
+    const res = await h!.app.inject({
+      method: 'POST',
+      url: `/api/chat/sessions/${sessionId}/messages`,
+      payload: { content: 'write it' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(calls).toHaveLength(3); // no review call
+    await expect(readFile(path.join(root, 'lessons', '0001-heaps.html'), 'utf8')).resolves.toBe(ROUND1_HTML);
+    const next = JSON.parse(String(calls[2].init.body)) as { messages: { role: string; content: string }[] };
+    expect(JSON.parse(next.messages.find((m) => m.role === 'tool')?.content ?? '{}')).toMatchObject({
+      ok: true,
+      rounds: 0,
+      revisions: 0,
+    });
+  });
+
+  it('caps visual review at two revisions', async () => {
+    const { sessionId, root } = await startSession('ChatGenReviewCap');
+    renderLessonPngMock.mockResolvedValue(Buffer.from('png'));
+    h!.ctx.feedQuestions = () => undefined;
+    const calls = captureFetch([
+      toolCall('generate_lesson', { path: 'lessons/0001-heaps.html', topic: 'heaps' }),
+      writerResponse(ROUND1_HTML),
+      writerResponse(REVISED_HTML),
+      writerResponse(REVISED_HTML.replace('root (labeled)', 'root (final)')),
+      finalText(),
+    ]);
+    const res = await h!.app.inject({
+      method: 'POST',
+      url: `/api/chat/sessions/${sessionId}/messages`,
+      payload: { content: 'write it' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(calls).toHaveLength(5); // exactly two review cycles
+    const finalHtml = REVISED_HTML.replace('root (labeled)', 'root (final)');
+    await expect(readFile(path.join(root, 'lessons', '0001-heaps.html'), 'utf8')).resolves.toBe(finalHtml);
+    const next = JSON.parse(String(calls[4].init.body)) as { messages: { role: string; content: string }[] };
+    expect(JSON.parse(next.messages.find((m) => m.role === 'tool')?.content ?? '{}')).toMatchObject({
+      ok: true,
+      rounds: 2,
+      revisions: 2,
+    });
   });
 
   it('rejects incomplete HTML without writing a file', async () => {
@@ -541,6 +766,101 @@ describe('generate_lesson (lesson writer delegation)', () => {
     expect(calls).toHaveLength(2); // no writer call happened
     await expect(stat(path.join(root, 'x.html'))).rejects.toThrow();
     await expect(stat(path.join(h!.dataDir, 'x.html'))).rejects.toThrow();
+  });
+
+  it('with lessons present: write_lesson rejects a new path and allows an existing one', async () => {
+    const { id, sessionId, root } = await startSession('ChatPolicyWrite');
+    h!.ctx.feedQuestions = () => undefined;
+    await seedLesson(id, root);
+
+    const calls = captureFetch([
+      toolCall('write_lesson', { path: 'lessons/0002-new.html', html: '<h1>New</h1>' }),
+      finalText(),
+    ]);
+    await h!.app.inject({
+      method: 'POST',
+      url: `/api/chat/sessions/${sessionId}/messages`,
+      payload: { content: 'add another lesson' },
+    });
+    // the error reaches the model via the tool result, and nothing was written
+    const next = JSON.parse(String(calls[1].init.body)) as { messages: { role: string; content: string }[] };
+    expect(next.messages.find((m) => m.role === 'tool')?.content).toContain('lessons already exist');
+    await expect(stat(path.join(root, 'lessons', '0002-new.html'))).rejects.toThrow();
+    await expect(readFile(path.join(root, 'lessons', '0001-heaps.html'), 'utf8')).resolves.toBe(
+      '<h1>existing</h1>',
+    );
+
+    captureFetch([
+      toolCall('write_lesson', { path: 'lessons/0001-heaps.html', html: '<h1>Better heaps</h1>' }),
+      finalText(),
+    ]);
+    const res = await h!.app.inject({
+      method: 'POST',
+      url: `/api/chat/sessions/${sessionId}/messages`,
+      payload: { content: 'improve that lesson' },
+    });
+    expect(dataOf(res.body, 'tool')).toEqual([{ name: 'write_lesson', ok: true }]);
+    await expect(readFile(path.join(root, 'lessons', '0001-heaps.html'), 'utf8')).resolves.toBe(
+      '<h1>Better heaps</h1>',
+    );
+  });
+
+  it('with lessons present: generate_lesson rejects a new path before calling the writer', async () => {
+    const { id, sessionId, root } = await startSession('ChatPolicyGen');
+    h!.ctx.feedQuestions = () => undefined;
+    await seedLesson(id, root);
+    // only two responses: chat stream + final text. A writer call would need a third.
+    const calls = captureFetch([
+      toolCall('generate_lesson', { path: 'lessons/0002-new.html', topic: 'heaps' }),
+      finalText(),
+    ]);
+    const res = await h!.app.inject({
+      method: 'POST',
+      url: `/api/chat/sessions/${sessionId}/messages`,
+      payload: { content: 'write another lesson' },
+    });
+    expect(dataOf(res.body, 'tool')).toEqual([{ name: 'generate_lesson', ok: false }]);
+    expect(calls).toHaveLength(2);
+    const next = JSON.parse(String(calls[1].init.body)) as { messages: { role: string; content: string }[] };
+    expect(next.messages.find((m) => m.role === 'tool')?.content).toContain('lessons already exist');
+    await expect(stat(path.join(root, 'lessons', '0002-new.html'))).rejects.toThrow();
+  });
+
+  it('with lessons present: generate_lesson on an existing path regenerates it', async () => {
+    const { id, sessionId, root } = await startSession('ChatPolicyGenEdit');
+    h!.ctx.feedQuestions = () => undefined;
+    await seedLesson(id, root);
+    const calls = captureFetch([
+      toolCall('generate_lesson', { path: 'lessons/0001-heaps.html', topic: 'heap sort' }),
+      writerResponse(VALID_HTML),
+      finalText(),
+    ]);
+    const res = await h!.app.inject({
+      method: 'POST',
+      url: `/api/chat/sessions/${sessionId}/messages`,
+      payload: { content: 'regenerate that lesson' },
+    });
+    expect(dataOf(res.body, 'tool')).toEqual([{ name: 'generate_lesson', ok: true }]);
+    expect(calls).toHaveLength(3);
+    await expect(readFile(path.join(root, 'lessons', '0001-heaps.html'), 'utf8')).resolves.toBe(VALID_HTML);
+  });
+
+  it('with no lessons yet: write_lesson may create the first lesson file', async () => {
+    const { sessionId, root } = await startSession('ChatPolicyFirst');
+    h!.ctx.feedQuestions = () => undefined;
+    captureFetch([
+      toolCall('write_lesson', { path: 'lessons/0001-first.html', html: '<h1>First</h1>' }),
+      finalText(),
+    ]);
+    const res = await h!.app.inject({
+      method: 'POST',
+      url: `/api/chat/sessions/${sessionId}/messages`,
+      payload: { content: 'start the course' },
+    });
+    expect(dataOf(res.body, 'tool')).toEqual([{ name: 'write_lesson', ok: true }]);
+    await expect(readFile(path.join(root, 'lessons', '0001-first.html'), 'utf8')).resolves.toBe(
+      '<h1>First</h1>',
+    );
   });
 });
 
