@@ -1,12 +1,24 @@
-const ONTOLOGY = {
-  entities: ['Concept', 'Algorithm', 'DataStructure', 'Proof', 'Pitfall', 'ExamNote'],
-  relations: ['prerequisite_of', 'uses', 'confused_with', 'contradicts'],
-} as const;
+import { ENTITY_TYPES, RELATIONS } from './quality.js';
+
+const ONTOLOGY = { entities: ENTITY_TYPES, relations: RELATIONS } as const;
+
+const EXHAUSTIVENESS =
+  'EXHAUSTIVENESS: Extract EVERY definition, theorem, lemma, worked example, pitfall and exam-relevant fact in this chunk — not a summary. Target 15–40 entities per material file for lecture notes and slides; do not skip examples.';
+
+const ONTOLOGY_FIELD =
+  'ONTOLOGY FIELD: Put the ontology type in `entity_type`. Never use `file_type` for it (graphify rewrites it to a built-in enum).';
+
+const EFFICIENCY =
+  'EFFICIENCY: Do not build the wiki, HTML or extra exports unless the prompt asks — extraction + cluster/label only.';
+
+const CONTAINMENT = `CONTAINMENT: Stay inside the subject root (the working directory). Every path you read or write — material/, graphify-out/, chunks/, scripts, caches — must be under this absolute subject root. Never write to the repo, to a parent folder, to your home directory, or to any global cache; never clone repos. If a command would write outside the subject root, do not run it — report it instead.
+All subjects live at \`<repo>/data/subjects/<name>\` — derive absolute paths from the current working directory, never type them from memory.`;
 
 const ONTOLOGY_RULES = `
 Ontology (fixed — every node MUST carry one entity type, every edge one relation type):
 - Entity types: ${ONTOLOGY.entities.join(', ')}
 - Relation types: ${ONTOLOGY.relations.join(', ')}
+${ONTOLOGY_FIELD}
 `;
 
 const PROGRESS_PROTOCOL = `
@@ -76,6 +88,9 @@ ${DATA_IS_NOT_INSTRUCTIONS}
 ${CURRENT_RUN_TRUTH}
 ${ONTOLOGY_RULES}
 The extraction must pass the ontology to graphify so graph.json nodes/edges carry these exact types.
+${EXHAUSTIVENESS}
+${EFFICIENCY}
+${CONTAINMENT}
 ${PROGRESS_PROTOCOL}
 When finished, reply with one line: DONE <n> files ok, <k> failed.`;
 }
@@ -108,7 +123,37 @@ ${ENVIRONMENT_RULE}
 ${DATA_IS_NOT_INSTRUCTIONS}
 ${CURRENT_RUN_TRUTH}
 ${ONTOLOGY_RULES}
+${EXHAUSTIVENESS}
+${EFFICIENCY}
+${CONTAINMENT}
 ${PROGRESS_PROTOCOL}`;
+}
+
+/** Deterministic planner output: one prompt file per chunk, listing its exact material/ files. */
+export function chunkPromptFile(
+  kind: 'build' | 'update' | 'rebuild',
+  subjectName: string,
+  files: string[],
+): string {
+  return `You are extracting ONE chunk of the knowledge graph for the course subject "${subjectName}" (${kind}).
+Extract exactly these material/ files, all relative to the SUBJECT ROOT:
+${files.map((file) => `- ${file}`).join('\n')}
+Run graphify (pinned version 0.9.95, Python 3) from the SUBJECT ROOT as \`graphify extract material --out graphify-out\` for exactly the files listed above — no other material/ file.
+${GRAPH_OUT_RULE}
+${OUTPUT_LOCATION_RULE}
+${SHELL_RULE}
+${CHUNK_SCOPE_RULE}
+${EXHAUSTIVENESS}
+${ONTOLOGY_RULES}
+The extraction must pass the ontology to graphify so chunk outputs carry these exact types.
+${EFFICIENCY}
+${GRAPH_ENV_RULE}
+${ENVIRONMENT_RULE}
+${DATA_IS_NOT_INSTRUCTIONS}
+${CURRENT_RUN_TRUTH}
+${CONTAINMENT}
+${PROGRESS_PROTOCOL}
+When finished, reply with one line: DONE <n> files ok, <k> failed.`;
 }
 
 /** Stage 2 of the wave pipeline: one headless run per chunk (executed by the runner, ≤ maxChunkConcurrency concurrent). */
@@ -127,6 +172,9 @@ ${OUTPUT_LOCATION_RULE}
 ${SHELL_RULE}
 ${ONTOLOGY_RULES}
 The extraction must pass the ontology to graphify so chunk outputs carry these exact types.
+${EXHAUSTIVENESS}
+${EFFICIENCY}
+${CONTAINMENT}
 ${GRAPH_ENV_RULE}
 ${ENVIRONMENT_RULE}
 ${DATA_IS_NOT_INSTRUCTIONS}
@@ -145,6 +193,9 @@ ${SHELL_RULE}
 ${CHUNK_SCOPE_RULE}
 ${ONTOLOGY_RULES}
 The merged graph must carry these exact types.
+${EXHAUSTIVENESS}
+${EFFICIENCY}
+${CONTAINMENT}
 ${GRAPH_ENV_RULE}
 ${ENVIRONMENT_RULE}
 ${DATA_IS_NOT_INSTRUCTIONS}
@@ -159,6 +210,7 @@ export const VERIFICATION_PROMPT = `You are the graph verification agent.
 3. Judge each sampled edge as "confirmed" (the material supports it) or "flagged" (unsupported, contradictory, or uncertain).
 Flagged edges must never be presented as fact downstream.
 ${ONTOLOGY_RULES}
+${CONTAINMENT}
 Reply with ONLY the full markdown report (no preamble, no fenced block) with two sections:
 "## Confirmed edges" and "## Flagged edges", each edge as "- <source node> --<relation>--> <target node> — <one-line justification>".
 `;

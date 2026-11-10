@@ -40,6 +40,17 @@ Run every graphify command from the subject root and always pin the output: `gra
 
 Never `cd` into graphify-out. Output MUST be exactly `<subject root>/graphify-out/graph.json`; a `graphify-out/graphify-out/` directory is a bug — move its contents up one level and delete it before reporting.
 
+## Stay inside the subject root
+Stay inside the subject root (the working directory). Every path you read or write — material/, graphify-out/, chunks/, scripts, caches — must be under this absolute subject root. Never write to the repo, to a parent folder, to your home directory, or to any global cache; never clone repos. If a command would write outside the subject root, do not run it — report it instead.
+All subjects live at `<repo>/data/subjects/<name>` — derive absolute paths from the current working directory, never type them from memory.
+
+## Fixed ontology and extraction density
+Put the ontology type in `entity_type`. Never use `file_type` for it (graphify rewrites it to a built-in enum).
+- Entity types: Concept, Algorithm, DataStructure, Proof, Pitfall, ExamNote
+- Relation types: prerequisite_of, uses, confused_with, contradicts
+Extract EVERY definition, theorem, lemma, worked example, pitfall and exam-relevant fact in this chunk — not a summary. Target 15–40 entities per material file for lecture notes and slides; do not skip examples.
+Do not build the wiki, HTML or extra exports unless the prompt asks — extraction + cluster/label only.
+
 ## Shell (Windows PowerShell 5.1)
 The shell is Windows PowerShell 5.1. `&&`, `||` and `??` do not work — chain commands with `;`. Run each graphify command as a single line from the SUBJECT ROOT using absolute paths. To inspect JSON, write a .py file and run it with `<venv>\Scripts\python.exe` (the venv is on PATH / `GRAPHIFY_BIN`'s directory) instead of PowerShell JSON pipelines.
 

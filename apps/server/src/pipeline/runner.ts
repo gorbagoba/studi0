@@ -1,15 +1,19 @@
 import path from 'node:path';
 import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { extractJson, parseFailures, parseProgress, stripStepMarkers, type FailureLine, type ProgressLine } from './parse.js';
 import { appendBuildLog, formatLogLine } from './buildLog.js';
 import { killTree, killTreeWithDeadline, spawnArgs, type ChildRun } from '../util/proc.js';
 import {
+  chunkPromptFile,
   chunkWavePrompt,
   extractionPrompt,
   mergePrompt,
   planPrompt,
   VERIFICATION_PROMPT,
 } from '../graph/prompts.js';
+import { planChunks, listMaterialFiles, PLAN_LIMITS } from '../graph/plan.js';
+import { auditGraph, mergeDuplicateNodes, ontologyProblems } from '../graph/quality.js';
 import { safeResolve } from '../fs/paths.js';
 import { safeWriteFile } from '../fs/safeWrite.js';
 import { graphEnv } from '../graph/backendEnv.js';
@@ -171,6 +175,43 @@ export const makeRunPipeline =
       }
     };
 
+    /**
+     * Merge duplicate labels and enforce the fixed ontology before verification.
+     * Returns a failed outcome, or null when the graph is acceptable.
+     */
+    const runQualityGate = async (partial: FailureLine[] | null): Promise<PipelineOutcome | null> => {
+      const graphPath = path.join(subject.path, 'graphify-out', 'graph.json');
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(await readFile(graphPath, 'utf8'));
+      } catch (e) {
+        const error = `graph.json unreadable: ${e instanceof Error ? e.message : String(e)}`;
+        log(`FAILED: ${error}`);
+        return { status: 'failed', partial, error };
+      }
+      const { graph, merged } = mergeDuplicateNodes(parsed);
+      if (merged > 0) {
+        try {
+          await safeWriteFile(graphPath, JSON.stringify(graph, null, 2) + '\n');
+          log(`merged ${merged} duplicate nodes`);
+        } catch (e) {
+          const error = `graph.json write failed: ${e instanceof Error ? e.message : String(e)}`;
+          log(`FAILED: ${error}`);
+          return { status: 'failed', partial, error };
+        }
+      }
+      const audit = auditGraph(graph);
+      const problems = ontologyProblems(audit);
+      log(
+        `graph quality: ${audit.nodes} nodes, ${audit.edges} edges, ${audit.orphans} orphans, ${merged} duplicates merged, ${problems.nodeViolations + problems.edgeViolations} ontology violations`,
+      );
+      if (problems.error) {
+        log(`FAILED: ${problems.error}`);
+        return { status: 'failed', partial, error: problems.error };
+      }
+      return null;
+    };
+
     /** Original pipeline shape: one headless run does chunking + extraction + export itself. */
     const runSingle = async (): Promise<PipelineOutcome> => {
       if (aborted || signal.aborted) return finish({ status: 'cancelled', partial: null, error: null });
@@ -220,8 +261,11 @@ export const makeRunPipeline =
       }
       const failures = parseFailures(res.stdout);
       for (const f of failures) log(`failed file: ${f.file} — ${f.reason}`);
+      const partial = failures.length ? failures : null;
+      const rejected = await runQualityGate(partial);
+      if (rejected) return finish(rejected);
       const status: PipelineOutcome['status'] = failures.length ? 'partial' : 'complete';
-      return finish(await runVerification(status, failures.length ? failures : null));
+      return finish(await runVerification(status, partial));
     };
 
     /** Strict-parse the planner's answer: JSON list of chunk prompt file paths (+ total, the list wins).
@@ -251,29 +295,48 @@ export const makeRunPipeline =
     const runWaves = async (): Promise<PipelineOutcome> => {
       log(`${job.kind} started (job ${job.id.slice(0, 8)})`);
       log('planning chunk split');
-      // stage 1 — planner one-shot: chunks ONLY, no extraction
-      // (runWaves is only reached for build/update/rebuild — recluster dispatches to runSingle)
-      const planChild = spawnChild([
-        'run',
-        '--auto',
-        '--model',
-        cfg.graphPlanModel,
-        '--agent',
-        'studi0-pipeline',
-        '--standalone',
-        planPrompt(job.kind as 'build' | 'update' | 'rebuild', subject.name),
-      ]);
-      const planFlush = pipeLines(planChild, handleLine());
-      const planRes = await planChild.done;
-      planFlush();
-      if (aborted || signal.aborted) return finish({ status: 'cancelled', partial: null, error: null });
-      const chunks = planRes.code === 0 ? parsePlan(planRes.stdout) : null;
-      if (!chunks) {
-        // planner misbehaved — the single-run pipeline is safe (subject-local) and keeps the build working
-        log('chunk plan unusable — falling back to single-run pipeline');
-        return runSingle();
+      const kind = job.kind as 'build' | 'update' | 'rebuild';
+      // stage 1 — deterministic plan from the material/ file list (no model turn);
+      // the planner one-shot remains only as the empty/unreadable-list fallback.
+      const material = await listMaterialFiles(subject.path).catch(() => []);
+      let chunks: string[] = [];
+      if (material.length > 0) {
+        const groups = planChunks(material, PLAN_LIMITS);
+        for (let i = 0; i < groups.length; i++) {
+          const rel = `graphify-out/chunks/chunk-${String(i + 1).padStart(2, '0')}.md`;
+          await safeWriteFile(
+            path.join(subject.path, rel),
+            chunkPromptFile(kind, subject.name, groups[i].map((f) => f.relPath)),
+          );
+          chunks.push(rel);
+        }
+        log(`chunk plan: ${chunks.length} chunks (deterministic, ${material.length} files)`);
+      } else {
+        log('material/ file list empty or unreadable — falling back to planner one-shot');
+        const planChild = spawnChild([
+          'run',
+          '--auto',
+          '--model',
+          cfg.graphPlanModel,
+          '--agent',
+          'studi0-pipeline',
+          '--standalone',
+          planPrompt(kind, subject.name),
+        ]);
+        const planFlush = pipeLines(planChild, handleLine());
+        const planRes = await planChild.done;
+        planFlush();
+        if (aborted || signal.aborted) return finish({ status: 'cancelled', partial: null, error: null });
+        const planned = planRes.code === 0 ? parsePlan(planRes.stdout) : null;
+        if (!planned) {
+          // planner misbehaved — the single-run pipeline is safe (subject-local) and keeps the build working
+          log('chunk plan unusable — falling back to single-run pipeline');
+          return runSingle();
+        }
+        chunks = planned;
+        log(`chunk plan: ${chunks.length} chunks`);
       }
-      log(`chunk plan: ${chunks.length} chunks`);
+      if (aborted || signal.aborted) return finish({ status: 'cancelled', partial: null, error: null });
       const total = chunks.length;
 
       // stage 2 — chunk extraction in waves of ≤ maxChunkConcurrency concurrent children
@@ -353,8 +416,11 @@ export const makeRunPipeline =
         failures.push(f);
         log(`failed file: ${f.file} — ${f.reason}`);
       }
+      const partial = failures.length ? failures : null;
+      const rejected = await runQualityGate(partial);
+      if (rejected) return finish(rejected);
       const status: PipelineOutcome['status'] = failures.length ? 'partial' : 'complete';
-      return finish(await runVerification(status, failures.length ? failures : null));
+      return finish(await runVerification(status, partial));
     };
 
     try {

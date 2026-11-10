@@ -1,9 +1,10 @@
 import { describe, expect, it, afterEach } from 'vitest';
-import { writeFile, readFile, rm } from 'node:fs/promises';
+import { writeFile, readFile, mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { makeHarness } from './helpers';
 import { isAlive } from '../src/util/proc.js';
 import { makeConfig } from '../src/config.js';
+import { planChunks, PLAN_LIMITS } from '../src/graph/plan.js';
 import type { TestHarness } from './helpers';
 
 // route every spawnArgs call at node itself: a real child without needing opencode
@@ -27,6 +28,19 @@ async function createSubject(name: string): Promise<{ id: string; root: string }
   return { id: body.id, root: body.path };
 }
 
+/** Write `count` small material files and report the sizes planChunks will see. */
+async function stageMaterial(root: string, count: number): Promise<{ relPath: string; bytes: number }[]> {
+  await mkdir(path.join(root, 'material'), { recursive: true });
+  const files: { relPath: string; bytes: number }[] = [];
+  for (let i = 0; i < count; i++) {
+    const relPath = `material/f-${String(i).padStart(2, '0')}.md`;
+    const body = 'x'.repeat(100 + i);
+    await writeFile(path.join(root, relPath), body);
+    files.push({ relPath, bytes: Buffer.byteLength(body) });
+  }
+  return files;
+}
+
 function stageScript(): string {
   // The fake `opencode` (executed as `node run ...`): stages are told apart by
   // stable phrases from the real prompts (PLANNER / Execute this graphify chunk /
@@ -40,11 +54,15 @@ if (prompt.includes('graph verification agent')) {
 }
 if (prompt.includes('per-chunk extraction outputs')) { // merge + export
   fs.mkdirSync('graphify-out', { recursive: true });
-  fs.writeFileSync('graphify-out/graph.json', '{"nodes":[]}');
+  const graph = process.env.STUDI0_TEST_BAD_GRAPH === '1'
+    ? '{"nodes":[{"id":"a","label":"A","file_type":"concept"},{"id":"b","label":"B","file_type":"document"}],"links":[{"source":"a","target":"b","relation":"cites"}]}'
+    : '{"nodes":[]}';
+  fs.writeFileSync('graphify-out/graph.json', graph);
   console.log('DONE 0 files ok, 0 failed.');
   process.exit(0);
 }
 if (prompt.includes('PLANNER')) { // plan one-shot: write chunk files + JSON plan
+  if (process.env.STUDI0_TEST_PLAN_LOG) fs.appendFileSync(process.env.STUDI0_TEST_PLAN_LOG, 'planned\\n');
   if (process.env.STUDI0_TEST_PLAN_GARBAGE === '1') {
     console.log('sorry, I cannot produce a plan today');
     process.exit(0);
@@ -245,6 +263,70 @@ describe('wave pipeline runner (T-P1/T-P2)', () => {
       await expect(readFile(path.join(root, 'graphify-out', 'VERIFY_REPORT.md'), 'utf8')).resolves.toBeTruthy();
     } finally {
       delete process.env.STUDI0_TEST_PLAN_GARBAGE;
+    }
+  }, 60_000);
+
+  it.each(['build', 'update', 'rebuild'] as const)(
+    'skips the planner and writes deterministic chunk prompts for %s',
+    async (kind) => {
+      h = await makeHarness();
+      const { id, root } = await createSubject(`Det-${kind}`);
+      await writeFile(path.join(root, 'run'), stageScript());
+      const material = await stageMaterial(root, 18);
+      const expected = planChunks(material, PLAN_LIMITS).length;
+      const planLog = path.join(root, 'plan.log');
+      process.env.STUDI0_TEST_PLAN_LOG = planLog;
+      process.env.STUDI0_TEST_WAVELOG = path.join(root, 'wave.log');
+      try {
+        const jobId = (
+          await h.app.inject({ method: 'POST', url: `/api/subjects/${id}/jobs`, payload: { kind } })
+        ).json().id;
+        const job = await waitForTerminal(jobId, 60_000);
+        expect(job.status).toBe('complete');
+        expect(job.progress).toEqual({ done: expected, total: expected, currentFile: null });
+        // the planner one-shot never spawned
+        await expect(readFile(planLog, 'utf8')).rejects.toThrow();
+        const chunk = await readFile(path.join(root, 'graphify-out', 'chunks', 'chunk-01.md'), 'utf8');
+        expect(chunk).toContain('- material/f-00.md');
+        expect(chunk).toContain('entity_type');
+        expect(chunk).toContain('inside the subject root');
+        const tail = (await h.app.inject({ method: 'GET', url: `/api/subjects/${id}/graph/log` })).json() as {
+          log: string;
+        };
+        expect(tail.log).toContain(`chunk plan: ${expected} chunks (deterministic, 18 files)`);
+        expect(tail.log).toContain('graph quality:');
+      } finally {
+        delete process.env.STUDI0_TEST_PLAN_LOG;
+        delete process.env.STUDI0_TEST_WAVELOG;
+      }
+    },
+    90_000,
+  );
+
+  it('fails the build when extraction kept graphify default ontology', async () => {
+    h = await makeHarness();
+    const { id, root } = await createSubject('BadOntology');
+    await writeFile(path.join(root, 'run'), stageScript());
+    await stageMaterial(root, 2);
+    process.env.STUDI0_TEST_BAD_GRAPH = '1';
+    process.env.STUDI0_TEST_WAVELOG = path.join(root, 'wave.log');
+    try {
+      const jobId = (
+        await h.app.inject({ method: 'POST', url: `/api/subjects/${id}/jobs`, payload: { kind: 'build' } })
+      ).json().id;
+      const job = await waitForTerminal(jobId, 60_000);
+      expect(job.status).toBe('failed');
+      const error = job.error as string;
+      expect(error).toContain('graph ontology invalid: 2/2 nodes have unexpected entity_type');
+      expect(error).toContain('extraction must set entity_type, not file_type');
+      const tail = (await h.app.inject({ method: 'GET', url: `/api/subjects/${id}/graph/log` })).json() as {
+        log: string;
+      };
+      expect(tail.log).toContain('graph quality:');
+      expect(tail.log).toContain('ontology violations');
+    } finally {
+      delete process.env.STUDI0_TEST_BAD_GRAPH;
+      delete process.env.STUDI0_TEST_WAVELOG;
     }
   }, 60_000);
 });
