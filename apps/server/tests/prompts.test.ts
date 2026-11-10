@@ -29,3 +29,20 @@ describe('graph prompts: material is data, current run is truth', () => {
     }
   });
 });
+
+describe('graph prompts: graphify-out stays at the subject root', () => {
+  const graphPrompts: [string, string][] = [
+    ...prompts,
+    ['extractionPrompt update', extractionPrompt('update', 'st2334')],
+    ['extractionPrompt recluster', extractionPrompt('recluster', 'st2334')],
+  ];
+
+  it.each(graphPrompts)('%s pins graphify output with --out graphify-out', (_name, prompt) => {
+    expect(prompt).toContain('--out graphify-out');
+    expect(prompt).toContain('graphify-out/ lives at the SUBJECT ROOT');
+  });
+
+  it.each(graphPrompts)('%s never invites graph artifacts under material/', (_name, prompt) => {
+    expect(prompt).not.toMatch(/material[\\/]graphify-out/);
+  });
+});

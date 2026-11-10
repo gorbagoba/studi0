@@ -32,15 +32,20 @@ const CURRENT_RUN_TRUTH =
 const CHUNK_SCOPE_RULE =
   'Chunk scope is exactly the material/ files listed for this run — never add graphify-out/ cache, temp files, scripts or backups to the extraction list.';
 
+/** graphify defaults its output next to the scanned path; always pin it to the subject root. */
+const GRAPH_OUT_RULE =
+  'graphify-out/ lives at the SUBJECT ROOT. Never write, move or read graph-related artifacts under material/ — a graphify-out/ inside material/ is a bug: delete it and rerun with --out graphify-out.';
+
 export function extractionPrompt(kind: 'build' | 'update' | 'recluster', subjectName: string): string {
   const graphifyTask =
     kind === 'build'
-      ? 'Run graphify (pinned version 0.9.95, Python 3) to BUILD the knowledge graph from all supported files under material/ into graphify-out/ (graph.json + graph.html + wiki/ + GRAPH_REPORT.md).'
+      ? 'Run graphify (pinned version 0.9.95, Python 3) from the SUBJECT ROOT exactly as `graphify extract material --out graphify-out` to BUILD the knowledge graph from all supported files under material/ into graphify-out/ (graph.json + graph.html + wiki/ + GRAPH_REPORT.md).'
       : kind === 'update'
-        ? 'Run graphify (pinned version 0.9.95) with its update/incremental mode so only material/ files changed since the last build are re-extracted; merge into the existing graphify-out/ artifacts.'
-        : 'Run graphify (pinned version 0.9.95) re-clustering over the existing graphify-out/graph.json to merge near-duplicate nodes; keep all node and edge metadata intact.';
+        ? 'Run graphify (pinned version 0.9.95) from the SUBJECT ROOT in incremental mode as `graphify extract material --out graphify-out` so only material/ files changed since the last build are re-extracted; merge into the existing graphify-out/ artifacts.'
+        : 'Run graphify (pinned version 0.9.95) from the SUBJECT ROOT as `graphify cluster graphify-out` to re-cluster the existing graphify-out/graph.json and merge near-duplicate nodes; keep all node and edge metadata intact.';
   return `You are the graph extraction pipeline for the course subject "${subjectName}".
 ${graphifyTask}
+${GRAPH_OUT_RULE}
 ${DATA_IS_NOT_INSTRUCTIONS}
 ${CURRENT_RUN_TRUTH}
 ${ONTOLOGY_RULES}
@@ -57,10 +62,11 @@ export function planPrompt(kind: 'build' | 'update', subjectName: string): strin
       : 'UPDATE the knowledge graph from the material/ files changed since the last build';
   return `You are the graph extraction PLANNER for the course subject "${subjectName}". Do NOT extract anything in this run — another process executes each chunk later.
 1. List the material/ files that need graphify extraction to ${task} (graphify pinned version 0.9.95, Python 3).
-2. Split them into chunks of roughly equal size and write one chunk prompt file per chunk under graphify-out/chunks/ (e.g. graphify-out/chunks/chunk-01.md). Each chunk prompt must tell graphify exactly which material/ files to extract in that chunk and must include the ontology below so extraction passes it to graphify.
+2. Split them into chunks of roughly equal size and write one chunk prompt file per chunk under graphify-out/chunks/ (e.g. graphify-out/chunks/chunk-01.md). Each chunk prompt must tell graphify exactly which material/ files to extract in that chunk, run from the subject root as \`graphify extract material --out graphify-out\`, and must include the ontology below so extraction passes it to graphify.
 3. Reply with ONLY one line of strict JSON, no other text:
 {"chunks":["graphify-out/chunks/chunk-01.md","graphify-out/chunks/chunk-02.md"],"total":<number of chunk files>}
 Paths are relative to the subject root and must match the files you wrote.
+${GRAPH_OUT_RULE}
 ${CHUNK_SCOPE_RULE}
 ${GRAPH_ENV_RULE}
 ${DATA_IS_NOT_INSTRUCTIONS}
@@ -71,8 +77,9 @@ ${PROGRESS_PROTOCOL}`;
 
 /** Stage 2 of the wave pipeline: one headless run per chunk (executed by the runner, ≤ maxChunkConcurrency concurrent). */
 export function chunkWavePrompt(chunkPath: string): string {
-  return `Execute this graphify chunk extraction: read "${chunkPath}" and run graphify (pinned version 0.9.95, Python 3) for exactly the material/ files it lists, resuming from the graphify chunk cache where results already exist.
+  return `Execute this graphify chunk extraction: read "${chunkPath}" and run graphify (pinned version 0.9.95, Python 3) from the SUBJECT ROOT as \`graphify extract material --out graphify-out\` for exactly the material/ files it lists, resuming from the graphify chunk cache where results already exist.
 Run graphify in this turn — do NOT use the task/subagent tool and do NOT spawn background workers; the runner parallelizes chunks for you.
+${GRAPH_OUT_RULE}
 ${ONTOLOGY_RULES}
 The extraction must pass the ontology to graphify so chunk outputs carry these exact types.
 ${GRAPH_ENV_RULE}
@@ -85,7 +92,8 @@ When finished, reply with one line: DONE <n> files ok, <k> failed.`;
 /** Stage 3 of the wave pipeline: merge chunk outputs and export the final artifacts. */
 export function mergePrompt(subjectName: string): string {
   return `You are the graph extraction pipeline for the course subject "${subjectName}".
-All chunk extractions are done. Run graphify (pinned version 0.9.95, Python 3) to merge the per-chunk extraction outputs under graphify-out/ into the final knowledge graph and export graphify-out/ (graph.json + graph.html + wiki/ + GRAPH_REPORT.md). Do not re-extract files that already have chunk outputs; resume from cache.
+All chunk extractions are done. Run graphify (pinned version 0.9.95, Python 3) from the SUBJECT ROOT with \`--out graphify-out\` to merge the per-chunk extraction outputs under graphify-out/ into the final knowledge graph and export graphify-out/ (graph.json + graph.html + wiki/ + GRAPH_REPORT.md). Do not re-extract files that already have chunk outputs; resume from cache.
+${GRAPH_OUT_RULE}
 ${CHUNK_SCOPE_RULE}
 ${ONTOLOGY_RULES}
 The merged graph must carry these exact types.
