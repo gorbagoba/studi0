@@ -13,7 +13,7 @@ const ENVIRONMENT_RULE =
 const prompts: [string, string][] = [
   ['planPrompt', planPrompt('build', 'st2334')],
   ['extractionPrompt', extractionPrompt('build', 'st2334')],
-  ['chunkWavePrompt', chunkWavePrompt('graphify-out/chunks/chunk-01.md')],
+  ['chunkWavePrompt', chunkWavePrompt('graphify-out/chunks/chunk-01.md', 'build')],
   ['mergePrompt', mergePrompt('st2334')],
 ];
 
@@ -42,6 +42,9 @@ describe('graph prompts: graphify-out stays at the subject root', () => {
     ...prompts,
     ['extractionPrompt update', extractionPrompt('update', 'st2334')],
     ['extractionPrompt recluster', extractionPrompt('recluster', 'st2334')],
+    ['extractionPrompt rebuild', extractionPrompt('rebuild', 'st2334')],
+    ['planPrompt rebuild', planPrompt('rebuild', 'st2334')],
+    ['chunkWavePrompt rebuild', chunkWavePrompt('graphify-out/chunks/chunk-01.md', 'rebuild')],
   ];
 
   it.each(graphPrompts)('%s pins graphify output with --out graphify-out', (_name, prompt) => {
@@ -51,5 +54,37 @@ describe('graph prompts: graphify-out stays at the subject root', () => {
 
   it.each(graphPrompts)('%s never invites graph artifacts under material/', (_name, prompt) => {
     expect(prompt).not.toMatch(/material[\\/]graphify-out/);
+  });
+});
+
+describe('graph prompts: rebuild starts clean from a backed-up graph', () => {
+  const rebuildPrompts: [string, string][] = [
+    ['extractionPrompt rebuild', extractionPrompt('rebuild', 'st2334')],
+    ['planPrompt rebuild', planPrompt('rebuild', 'st2334')],
+    ['chunkWavePrompt rebuild', chunkWavePrompt('graphify-out/chunks/chunk-01.md', 'rebuild')],
+  ];
+
+  it.each(rebuildPrompts.slice(0, 2))('%s backs up graph.json before deleting build state', (_name, prompt) => {
+    expect(prompt).toContain('copy it to graphify-out/graph.json.pre-rebuild.bak');
+  });
+
+  it.each(rebuildPrompts.slice(0, 2))('%s deletes only the stale build state', (_name, prompt) => {
+    for (const stale of [
+      'graphify-out/cache/',
+      'graphify-out/.graphify_analysis.json',
+      'graphify-out/.graphify_semantic_marker',
+      'graphify-out/manifest.json',
+    ]) {
+      expect(prompt).toContain(stale);
+    }
+  });
+
+  it.each(rebuildPrompts)('%s extracts the full material/ tree, never incremental', (_name, prompt) => {
+    expect(prompt).toContain('graphify extract material --out graphify-out');
+    expect(prompt).not.toContain('incremental');
+  });
+
+  it('update still runs graphify incrementally', () => {
+    expect(extractionPrompt('update', 'st2334')).toContain('incremental mode');
   });
 });

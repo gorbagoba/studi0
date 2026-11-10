@@ -54,7 +54,7 @@ interface FileRow extends FileEntry {      // files-table row (per-file move res
   origin: "upload" | "seed";
 }
 
-type JobKind = "build" | "update" | "recluster";
+type JobKind = "build" | "update" | "recluster" | "rebuild";
 type JobStatus = "queued" | "running" | "cancelling" | "complete" | "partial" | "failed" | "cancelled";
 interface Job {
   id: ID; subjectId: ID; kind: JobKind; status: JobStatus;

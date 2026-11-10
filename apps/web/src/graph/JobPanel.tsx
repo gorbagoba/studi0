@@ -3,6 +3,7 @@ import type { ID, Job, JobKind } from '@studi0/shared';
 import { cancelJob, displayError, getBuildLog, startJob } from '../api/client';
 import { openSubjectEvents } from '../api/sse';
 import { TERMINAL_JOB_STATUSES } from './jobStatuses';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { ProgressBar } from '../components/ProgressBar';
 
@@ -19,6 +20,7 @@ export function JobPanel({
 }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirmRebuild, setConfirmRebuild] = useState(false);
   const active = job !== null && !TERMINAL_JOB_STATUSES.has(job.status);
 
   async function start(kind: JobKind): Promise<void> {
@@ -65,6 +67,9 @@ export function JobPanel({
         <button className="btn" disabled={active || busy} onClick={() => void start('recluster')}>
           Re-cluster
         </button>
+        <button className="btn" disabled={active || busy} onClick={() => setConfirmRebuild(true)}>
+          Rebuild graph
+        </button>
         {active && (
           <button className="btn-danger" disabled={busy} onClick={() => void cancel()}>
             Cancel
@@ -73,6 +78,18 @@ export function JobPanel({
       </div>
       {job !== null && <JobStatus job={job} />}
       <BuildLog subjectId={subjectId} active={active} jobId={job?.id ?? null} />
+      <ConfirmDialog
+        open={confirmRebuild}
+        title="Rebuild the whole graph?"
+        body="This backs up graph.json and clears graphify caches before re-extracting every material file. It can take a long time."
+        confirmLabel="Rebuild"
+        danger
+        onConfirm={() => {
+          setConfirmRebuild(false);
+          void start('rebuild');
+        }}
+        onClose={() => setConfirmRebuild(false)}
+      />
     </section>
   );
 }

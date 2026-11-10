@@ -1,7 +1,8 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { jobKindSchema } from '@studi0/shared';
 
 // stub spawn: the whole point is reading the args each stage spawns with
 // preflight probes GRAPHIFY_BIN for real — node itself answers --version
@@ -31,8 +32,10 @@ afterEach(async () => {
   }
 });
 
-/** Run one build job with stubbed spawns; returns every spawned arg array. */
-async function spawnedArgs(): Promise<string[][]> {
+/** Run one pipeline job with stubbed spawns; returns every spawned arg array and the subject root. */
+async function spawnedArgs(
+  kind: 'build' | 'update' | 'recluster' | 'rebuild' = 'build',
+): Promise<{ calls: string[][]; dir: string }> {
   const dir = await mkdtemp(path.join(tmpdir(), 'studi0-models-'));
   made.push(dir);
   await mkdir(path.join(dir, 'graphify-out', 'chunks'), { recursive: true });
@@ -40,7 +43,7 @@ async function spawnedArgs(): Promise<string[][]> {
   await writeFile(path.join(dir, 'graphify-out', 'graph.json'), '{}');
   const db = openDb(path.join(dir, 'studi0.db'));
   insertSubject(db, { id: 'subject-1', name: 'S', path: dir, created_at: new Date().toISOString() });
-  const job = jobsRepo.insertJob(db, 'job-1', 'subject-1', 'build');
+  const job = jobsRepo.insertJob(db, 'job-1', 'subject-1', kind);
   mocks.spawnArgs.mockReset();
   mocks.spawnArgs.mockImplementation((args: string[]) => ({
     pid: 4242,
@@ -62,7 +65,7 @@ async function spawnedArgs(): Promise<string[][]> {
   );
   expect(outcome.status).toBe('complete');
   db.close();
-  return mocks.spawnArgs.mock.calls.map((c) => c[0] as string[]);
+  return { calls: mocks.spawnArgs.mock.calls.map((c) => c[0] as string[]), dir };
 }
 
 /** The `--model` value of the one spawn whose trailing prompt carries the stage marker. */
@@ -74,7 +77,7 @@ function modelFor(calls: string[][], marker: string): string | undefined {
 
 describe('graph pipeline model per stage', () => {
   it('spawns plan/extract/merge on the fast model and verification on the thinking model', async () => {
-    const calls = await spawnedArgs();
+    const { calls } = await spawnedArgs();
     expect(modelFor(calls, 'PLANNER')).toBe('soclaas/nemotron3.5:30b');
     expect(modelFor(calls, 'Execute this graphify chunk')).toBe('soclaas/nemotron3.5:30b');
     expect(modelFor(calls, 'per-chunk extraction outputs')).toBe('soclaas/nemotron3.5:30b');
@@ -87,7 +90,7 @@ describe('graph pipeline model per stage', () => {
     process.env.STUDI0_GRAPH_MERGE_MODEL = 'ghost/merge';
     process.env.STUDI0_GRAPH_VERIFY_MODEL = 'ghost/verify';
     try {
-      const calls = await spawnedArgs();
+      const { calls } = await spawnedArgs();
       expect(modelFor(calls, 'PLANNER')).toBe('ghost/plan');
       expect(modelFor(calls, 'Execute this graphify chunk')).toBe('ghost/extract');
       expect(modelFor(calls, 'per-chunk extraction outputs')).toBe('ghost/merge');
@@ -129,5 +132,23 @@ describe('graph pipeline model per stage', () => {
     } finally {
       for (const key of Object.keys(env)) delete process.env[key];
     }
+  });
+
+  it('runs a rebuild through the chunked wave path with the rebuild plan prompt', async () => {
+    const { calls, dir } = await spawnedArgs('rebuild');
+    const plan = calls.find((a) => a[a.length - 1].includes('PLANNER'));
+    expect(plan, 'no plan stage spawned').toBeTruthy();
+    expect(plan![plan!.length - 1]).toContain('REBUILD');
+    expect(plan![plan!.length - 1]).toContain('graph.json.pre-rebuild.bak');
+    expect(calls.some((a) => a[a.length - 1].includes('Execute this graphify chunk'))).toBe(true);
+    const buildLog = await readFile(path.join(dir, 'graphify-out', 'build.log'), 'utf8');
+    expect(buildLog).toContain('full rebuild (cache cleared)');
+  });
+});
+
+describe('job kinds', () => {
+  it('accepts rebuild and rejects unknown kinds', () => {
+    expect(jobKindSchema.parse('rebuild')).toBe('rebuild');
+    expect(jobKindSchema.safeParse('explode').success).toBe(false);
   });
 });

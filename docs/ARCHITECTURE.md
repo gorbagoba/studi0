@@ -136,7 +136,7 @@ CREATE TABLE files (                       -- mirror of material/ inventory (upl
 CREATE TABLE jobs (
   id             TEXT PRIMARY KEY,
   subject_id     TEXT NOT NULL REFERENCES subjects(id),
-  kind           TEXT NOT NULL,            -- 'build' | 'update' | 'recluster'
+  kind           TEXT NOT NULL,            -- 'build' | 'update' | 'recluster' | 'rebuild'
   status         TEXT NOT NULL,            -- queued|running|cancelling|complete|partial|failed|cancelled
   progress_done  INTEGER NOT NULL DEFAULT 0,
   progress_total INTEGER NOT NULL DEFAULT 0,
@@ -235,8 +235,8 @@ Subject root is either an existing folder referenced in place (e.g. `../cs2040C`
 4. Badge clears only when an Update job completes (`last_built_at` advances).
 
 **(b) Build/update graph → headless opencode → graphify → verification → SSE**
-1. UI `POST /api/subjects/:id/jobs {kind: build|update|recluster}` → queued (409 if the subject already has an active job; queue holds it otherwise, max 2 running globally).
-2. Queue dequeues when a slot frees → `runner.ts` spawns `opencode run "<extraction prompt>"` with `cwd = subject root` (arg-array spawn, no shell). The prompt (from `graph/prompts.ts`) carries the fixed ontology (entities: Concept, Algorithm, DataStructure, Proof, Pitfall, ExamNote; relations: prerequisite_of, uses, confused_with, contradicts) and instructs the agent to run graphify 0.9.95 (`--update` for update jobs; re-cluster instructions for recluster) and to emit protocol lines on stdout: `studi0-progress {"done":n,"total":m,"file":"..."}`.
+1. UI `POST /api/subjects/:id/jobs {kind: build|update|recluster|rebuild}` → queued (409 if the subject already has an active job; queue holds it otherwise, max 2 running globally).
+2. Queue dequeues when a slot frees → `runner.ts` spawns `opencode run "<extraction prompt>"` with `cwd = subject root` (arg-array spawn, no shell). The prompt (from `graph/prompts.ts`) carries the fixed ontology (entities: Concept, Algorithm, DataStructure, Proof, Pitfall, ExamNote; relations: prerequisite_of, uses, confused_with, contradicts) and instructs the agent to run graphify 0.9.95 (`--update` for update jobs; re-cluster instructions for recluster; clean backup + cache clear + full re-extract for rebuild) and to emit protocol lines on stdout: `studi0-progress {"done":n,"total":m,"file":"..."}`.
 3. `parse.ts` tails stdout → progress events → job row update + `job` event on the subject SSE stream.
 4. On extraction completion, a **second headless run** (verification prompt) source-checks sampled edges and writes `graphify-out/VERIFY_REPORT.md` (flagged/confirmed edges). Flagged edges are treated as non-facts by the teacher.
 5. Outcome: `complete` (all chunks OK) / `partial` (per-file failures listed in `partial_json`, graph still usable — AC6) / `failed`. Verification failure → `partial` with reason "verification failed; edges unverified".

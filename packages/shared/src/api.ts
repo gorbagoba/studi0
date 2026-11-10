@@ -7,7 +7,7 @@ export type ISO = z.infer<typeof isoSchema>;
 
 // ---- enums ----
 
-export const jobKindSchema = z.enum(['build', 'update', 'recluster']);
+export const jobKindSchema = z.enum(['build', 'update', 'recluster', 'rebuild']);
 export type JobKind = z.infer<typeof jobKindSchema>;
 
 export const jobStatusSchema = z.enum([

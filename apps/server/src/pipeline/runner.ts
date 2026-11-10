@@ -49,12 +49,12 @@ export function killJob(jobId: string): void {
 }
 
 /**
- * The pipeline job body. build/update run as waves: a planner one-shot decides
- * the chunk split (JSON only), the runner itself executes chunk extractions in
- * waves of ≤ cfg.maxChunkConcurrency headless children (see pnpm calibrate),
- * then a final run merges + exports (plus the verification one-shot).
- * recluster — and any wave run whose plan is unusable — falls back to the
- * original single-run pipeline.
+ * The pipeline job body. build/update/rebuild run as waves: a planner one-shot
+ * decides the chunk split (JSON only), the runner itself executes chunk
+ * extractions in waves of ≤ cfg.maxChunkConcurrency headless children (see
+ * pnpm calibrate), then a final run merges + exports (plus the verification
+ * one-shot). recluster — and any wave run whose plan is unusable — falls back
+ * to the original single-run pipeline.
  */
 export const makeRunPipeline =
   (db: Db, cfg: Config, events?: EventBus): RunPipelineFn =>
@@ -79,6 +79,7 @@ export const makeRunPipeline =
       return { status: 'failed', partial: null, error: preflight.error };
     }
     log(`graphify ${preflight.version} (backend ${cfg.graphBackend}, model ${cfg.graphModel || 'default'})`);
+    if (job.kind === 'rebuild') log('full rebuild (cache cleared)');
 
     let aborted = false;
     const liveKills = new Set<() => void>();
@@ -248,7 +249,7 @@ export const makeRunPipeline =
       log(`${job.kind} started (job ${job.id.slice(0, 8)})`);
       log('planning chunk split');
       // stage 1 — planner one-shot: chunks ONLY, no extraction
-      // (runWaves is only reached for build/update — recluster dispatches to runSingle)
+      // (runWaves is only reached for build/update/rebuild — recluster dispatches to runSingle)
       const planChild = spawnChild([
         'run',
         '--auto',
@@ -257,7 +258,7 @@ export const makeRunPipeline =
         '--agent',
         'studi0-pipeline',
         '--standalone',
-        planPrompt(job.kind as 'build' | 'update', subject.name),
+        planPrompt(job.kind as 'build' | 'update' | 'rebuild', subject.name),
       ]);
       const planFlush = pipeLines(planChild, handleLine());
       const planRes = await planChild.done;
@@ -285,7 +286,7 @@ export const makeRunPipeline =
           '--agent',
           'studi0-pipeline',
           '--standalone',
-          chunkWavePrompt(chunk),
+          chunkWavePrompt(chunk, job.kind as 'build' | 'update' | 'rebuild'),
         ]);
         const flush = pipeLines(child, handleLine());
         const res = await child.done;
