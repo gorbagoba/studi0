@@ -3,6 +3,9 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { makeHarness } from './helpers';
 import { SETUP_BEGIN } from '../src/subjects/mission.js';
+import { activeActivities } from '../src/teacher/activity.js';
+import type { OcClient } from '../src/teacher/sdk.js';
+import type { V2Event } from '@opencode/client';
 
 // fan-out test asserts generating:true — pin a resolvable binary so the
 // 'skipped' branch (no opencode on the machine) can't flip it
@@ -187,5 +190,100 @@ describe('setup run SSE + agent status', () => {
     const idle = await h.app.inject({ method: 'GET', url: '/api/agent/status' });
     expect(idle.json()).toMatchObject({ busy: false, task: null });
     unsub();
+  });
+});
+
+/** opencode client whose prompt hangs on `gate` (and optionally fails after it). */
+function gatedClient(ocId: string, gate: Promise<void>, fail = false): OcClient {
+  const events: V2Event[] = [
+    { type: 'session.execution.succeeded', data: { sessionID: ocId } } as unknown as V2Event,
+  ];
+  return {
+    session: {
+      create: async () => ({ id: ocId }),
+      prompt: async () => {
+        await gate;
+        if (fail) throw new Error('turn blew up');
+        return {};
+      },
+      interrupt: async () => ({}),
+    },
+    message: { list: async () => ({ data: [], cursor: {} }) },
+    event: {
+      subscribe: async function* () {
+        for (const e of events) yield e;
+      },
+    },
+    permission: { reply: async () => undefined },
+  } as unknown as OcClient;
+}
+
+async function createChatSession(subjectId: string): Promise<string> {
+  const res = await h.app.inject({
+    method: 'POST',
+    url: `/api/subjects/${subjectId}/chat/sessions`,
+    payload: {},
+  });
+  return (res.json() as { id: string }).id;
+}
+
+describe('chat turn activity', () => {
+  it('reports an in-flight chat turn as busy, then idle once it settles', async () => {
+    h = await makeHarness();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    h.ctx.oc.ensureUp = () => undefined;
+    h.ctx.oc.client = () => gatedClient('oc-act', gate);
+    const { id } = await createSubject('ACT1');
+    const sessionId = await createChatSession(id);
+
+    const pending = h.app.inject({
+      method: 'POST',
+      url: `/api/chat/sessions/${sessionId}/messages`,
+      payload: { content: 'write lesson 2' },
+    });
+    await new Promise((r) => setTimeout(r, 50)); // let the turn start and reach the gate
+
+    const busy = (await h.app.inject({ method: 'GET', url: '/api/agent/status' })).json();
+    expect(busy).toMatchObject({
+      busy: true,
+      task: { kind: 'chat', subjectId: id, subjectName: 'ACT1' },
+    });
+    expect(busy.jobs).toEqual([
+      {
+        id: expect.any(String),
+        kind: 'chat',
+        subjectId: id,
+        subjectName: 'ACT1',
+        startedAt: expect.any(String),
+      },
+    ]);
+    expect(activeActivities()).toHaveLength(1);
+
+    release();
+    await pending;
+    expect(activeActivities()).toEqual([]);
+    const idle = (await h.app.inject({ method: 'GET', url: '/api/agent/status' })).json();
+    expect(idle).toMatchObject({ busy: false, task: null });
+  });
+
+  it('clears the activity even when the turn throws', async () => {
+    h = await makeHarness();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    h.ctx.oc.ensureUp = () => undefined;
+    h.ctx.oc.client = () => gatedClient('oc-fail', gate, true);
+    const { id } = await createSubject('ACT2');
+    const sessionId = await createChatSession(id);
+
+    const pending = h.app.inject({
+      method: 'POST',
+      url: `/api/chat/sessions/${sessionId}/messages`,
+      payload: { content: 'write lesson 3' },
+    });
+    release();
+    const res = await pending;
+    expect(res.body).toContain('event: error');
+    expect(activeActivities()).toEqual([]);
   });
 });

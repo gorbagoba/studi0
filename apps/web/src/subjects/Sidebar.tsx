@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useGroups, useSubjects } from '../api/hooks';
 import {
   createGroup,
@@ -673,7 +673,8 @@ function CopyRestartCommand() {
 }
 
 const AGENT_KIND_LABELS: Record<string, string> = {
-  'lesson-generation': 'Generating course lessons',
+  chat: 'Teacher turn',
+  'lesson-generation': 'Writing lessons',
   build: 'Graph build',
   update: 'Graph build',
   recluster: 'Graph build',
@@ -684,17 +685,41 @@ function kindLabel(kind: string): string {
   return AGENT_KIND_LABELS[kind] ?? kind;
 }
 
+function elapsed(startedAt: string): string {
+  const ms = Date.now() - new Date(startedAt).getTime();
+  return Number.isFinite(ms) ? `started ${Math.max(1, Math.round(ms / 60000))}m ago` : '';
+}
+
 /** Best-effort agent status: polls every 3s, never surfaces errors (status is informational). */
 function AgentSection() {
   const [status, setStatus] = useState<AgentStatus | null>(null);
   const [open, setOpen] = useState(false);
+  const [finished, setFinished] = useState(false);
+  // null until the first poll, so a cold idle start never shows "Finished"
+  const prevBusy = useRef<boolean | null>(null);
+  const finishTimer = useRef<number | null>(null);
 
   useEffect(() => {
     let alive = true;
     const poll = (): void => {
       getAgentStatus()
         .then((s) => {
-          if (alive) setStatus(s);
+          if (!alive) return;
+          setStatus(s);
+          const nowBusy = s.busy === true || s.jobs.length > 0;
+          if (prevBusy.current === true && !nowBusy) {
+            setFinished(true);
+            if (finishTimer.current !== null) window.clearTimeout(finishTimer.current);
+            finishTimer.current = window.setTimeout(() => {
+              finishTimer.current = null;
+              setFinished(false);
+            }, 5000);
+          } else if (nowBusy && finishTimer.current !== null) {
+            window.clearTimeout(finishTimer.current);
+            finishTimer.current = null;
+            setFinished(false);
+          }
+          prevBusy.current = nowBusy;
         })
         .catch(() => undefined);
     };
@@ -703,18 +728,19 @@ function AgentSection() {
     return () => {
       alive = false;
       window.clearInterval(t);
+      if (finishTimer.current !== null) window.clearTimeout(finishTimer.current);
     };
   }, []);
 
   const task = status?.task ?? null;
-  const busy = status?.busy === true && task !== null;
   const jobs = status?.jobs ?? [];
+  const busy = status?.busy === true || jobs.length > 0;
+  // a chat/activity row has no task row, so fall back to its subject name
+  const busySubject = task?.subjectName ?? jobs.find((j) => j.subjectName !== undefined)?.subjectName;
 
-  let started = '';
-  if (busy && task !== null) {
-    const ms = Date.now() - new Date(task.startedAt).getTime();
-    if (Number.isFinite(ms)) started = `started ${Math.max(1, Math.round(ms / 60000))}m ago`;
-  }
+  let text = 'Agent idle';
+  if (busy) text = busySubject !== undefined ? `Working: ${busySubject}` : 'Working…';
+  else if (finished) text = 'Finished';
 
   return (
     <div className="agent-section">
@@ -725,8 +751,8 @@ function AgentSection() {
         aria-haspopup="true"
         onClick={() => setOpen((o) => !o)}
       >
-        <span className={`agent-dot${busy ? ' busy' : ''}`} aria-hidden="true" />
-        {busy && task !== null ? `Working: ${task.subjectName}` : 'Agent idle'}
+        <span className={`agent-dot${busy ? ' busy' : finished ? ' done' : ''}`} aria-hidden="true" />
+        <span aria-live="polite">{text}</span>
       </button>
       {open && (
         <div className="agent-popover">
@@ -734,20 +760,28 @@ function AgentSection() {
           {busy && task !== null && (
             <p className="agent-task">
               {kindLabel(task.kind)} — {task.subjectName}
-              {started !== '' && <span className="muted"> ({started})</span>}
-            </p>
-          )}
-          {jobs.map((j) => (
-            <p key={j.id} className="agent-task">
-              {kindLabel(j.kind)} — {j.subject}: {j.status}
-              {j.done !== undefined && j.total !== undefined && (
-                <span className="muted">
-                  {' '}
-                  ({j.done}/{j.total})
-                </span>
+              {elapsed(task.startedAt) !== '' && (
+                <span className="muted"> ({elapsed(task.startedAt)})</span>
               )}
             </p>
-          ))}
+          )}
+          {jobs.map((j) => {
+            const subject = j.subject ?? j.subjectName ?? '';
+            const jobElapsed = j.startedAt !== undefined ? elapsed(j.startedAt) : '';
+            return (
+              <p key={j.id} className="agent-task">
+                {kindLabel(j.kind)} — {subject}
+                {j.status !== undefined && `: ${j.status}`}
+                {j.done !== undefined && j.total !== undefined && (
+                  <span className="muted">
+                    {' '}
+                    ({j.done}/{j.total})
+                  </span>
+                )}
+                {jobElapsed !== '' && <span className="muted"> ({jobElapsed})</span>}
+              </p>
+            );
+          })}
           {!busy && jobs.length === 0 && <p className="agent-task muted">No active jobs</p>}
         </div>
       )}

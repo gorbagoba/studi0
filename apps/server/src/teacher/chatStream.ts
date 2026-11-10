@@ -12,6 +12,7 @@ import type { OneshotFn } from '../util/oneshot.js';
 import type { ChatSessionRow } from '../db/repos/chat.js';
 import type { SubjectRow } from '../db/repos/subjects.js';
 import { HttpError } from '../util/errors.js';
+import { beginActivity, endActivity } from './activity.js';
 
 export interface StreamTurnDeps extends NativeTurnDeps {
   client: OcClient;
@@ -34,6 +35,7 @@ export async function streamTurn(
   const { db, cfg, events, client, oneshot, feedQuestions } = deps;
   let session = startSession;
   let terminalSent = false;
+  const activityId = beginActivity(subject.id, subject.name, 'chat');
 
   const terminate = (event: 'done' | 'error', data: unknown) => {
     if (terminalSent) return;
@@ -114,6 +116,8 @@ export async function streamTurn(
         ...(err.details !== undefined ? { details: err.details } : {}),
       },
     });
+  } finally {
+    endActivity(activityId);
   }
 }
 

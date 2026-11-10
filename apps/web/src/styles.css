@@ -1795,7 +1795,8 @@ dl.diag-list dd.diag-status {
 }
 .agent-btn:hover { color: var(--ink); border-color: var(--muted); }
 .agent-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line); flex-shrink: 0; }
-.agent-dot.busy { background: var(--warn); animation: agent-pulse 1.4s ease-in-out infinite; }
+.agent-dot.busy { background: var(--ok); animation: agent-pulse 1.4s ease-in-out infinite; }
+.agent-dot.done { background: var(--ok); }
 @keyframes agent-pulse { 50% { opacity: 0.3; } }
 /* the section sits at the viewport bottom, so the panel opens above the button */
 .agent-popover {

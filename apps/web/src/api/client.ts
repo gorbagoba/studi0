@@ -146,7 +146,17 @@ export const getHealth = (): Promise<Health> => api<Health>('/api/health');
 export interface AgentStatus {
   busy: boolean;
   task: { kind: string; subjectId: string; subjectName: string; startedAt: string } | null;
-  jobs: Array<{ id: string; kind: string; subject: string; status: string; done?: number; total?: number }>;
+  /** Graph jobs carry `subject`/`status`/`done`/`total`; activity rows carry `subjectName`/`startedAt`. */
+  jobs: Array<{
+    id: string;
+    kind: string;
+    subject?: string;
+    status?: string;
+    done?: number;
+    total?: number;
+    subjectName?: string;
+    startedAt?: string;
+  }>;
 }
 
 export const getAgentStatus = (): Promise<AgentStatus> => api<AgentStatus>('/api/agent/status');

@@ -2,19 +2,28 @@
 import type { Health } from '@studi0/shared';
 import type { Ctx } from '../../context.js';
 import { activeSetupRuns } from '../../subjects/setupRun.js';
+import { activeActivities, type Activity } from '../../teacher/activity.js';
 
-/** Live agent/monitor snapshot (setup runs + non-terminal pipeline jobs). */
+/** Live agent/monitor snapshot (setup runs, chat turns + non-terminal pipeline jobs). */
 interface AgentStatus {
   busy: boolean;
-  task: { kind: 'lesson-generation'; subjectId: string; subjectName: string; startedAt: string } | null;
-  jobs: Array<{
-    id: string;
-    kind: 'build' | 'update' | 'recluster';
-    subject: string;
-    status: 'queued' | 'running' | 'cancelling';
-    done: number;
-    total: number;
-  }>;
+  task: {
+    kind: 'lesson-generation' | 'chat';
+    subjectId: string;
+    subjectName: string;
+    startedAt: string;
+  } | null;
+  jobs: Array<
+    | {
+        id: string;
+        kind: 'build' | 'update' | 'recluster';
+        subject: string;
+        status: 'queued' | 'running' | 'cancelling';
+        done: number;
+        total: number;
+      }
+    | Pick<Activity, 'id' | 'kind' | 'subjectId' | 'subjectName' | 'startedAt'>
+  >;
 }
 
 export async function registerHealthRoutes(app: FastifyInstance, ctx: Ctx): Promise<void> {
@@ -51,9 +60,14 @@ export async function registerHealthRoutes(app: FastifyInstance, ctx: Ctx): Prom
     };
   });
 
-  // live monitor: headless setup runs + non-terminal pipeline jobs
+  // live monitor: headless setup runs, in-flight chat turns + non-terminal pipeline jobs
   app.get('/api/agent/status', async (): Promise<AgentStatus> => {
     const runs = activeSetupRuns();
+    const activities = activeActivities();
+    const newest = activities.reduce<Activity | null>(
+      (a, b) => (!a || b.startedAt >= a.startedAt ? b : a),
+      null,
+    );
     const jobs = ctx.db
       .prepare(
         `SELECT j.id, j.kind, j.status, j.progress_done, j.progress_total, s.name AS subject
@@ -70,16 +84,34 @@ export async function registerHealthRoutes(app: FastifyInstance, ctx: Ctx): Prom
       subject: string;
     }>;
     return {
-      busy: runs.length > 0,
-      task: runs[0] ? { kind: 'lesson-generation', ...runs[0] } : null,
-      jobs: jobs.map((j) => ({
-        id: j.id,
-        subject: j.subject,
-        kind: j.kind,
-        status: j.status,
-        done: j.progress_done,
-        total: j.progress_total,
-      })),
+      busy: runs.length > 0 || activities.length > 0 || jobs.length > 0,
+      task: runs[0]
+        ? { kind: 'lesson-generation', ...runs[0] }
+        : newest
+          ? {
+              kind: newest.kind,
+              subjectId: newest.subjectId,
+              subjectName: newest.subjectName,
+              startedAt: newest.startedAt,
+            }
+          : null,
+      jobs: [
+        ...jobs.map((j) => ({
+          id: j.id,
+          subject: j.subject,
+          kind: j.kind,
+          status: j.status,
+          done: j.progress_done,
+          total: j.progress_total,
+        })),
+        ...activities.map(({ id, kind, subjectId, subjectName, startedAt }) => ({
+          id,
+          kind,
+          subjectId,
+          subjectName,
+          startedAt,
+        })),
+      ],
     };
   });
 

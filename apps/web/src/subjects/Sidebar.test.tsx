@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Sidebar } from './Sidebar';
 import * as client from '../api/client';
@@ -68,6 +68,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.clearAllMocks();
 });
 
@@ -232,9 +233,61 @@ describe('Sidebar agent status', () => {
     const btn = await screen.findByRole('button', { name: 'Working: Linear Algebra' });
     expect(btn.querySelector('.agent-dot')?.className).toContain('busy');
     fireEvent.click(btn);
-    expect(screen.getByText(/Generating course lessons — Linear Algebra/)).toBeTruthy();
+    expect(screen.getByText(/Writing lessons — Linear Algebra/)).toBeTruthy();
     expect(screen.getByText(/Graph build — DB Systems: running/)).toBeTruthy();
     expect(screen.getByText(/2\/5/)).toBeTruthy();
+  });
+
+  it('treats an in-flight chat turn (activity row, no task) as working', async () => {
+    vi.mocked(client.getAgentStatus).mockResolvedValue({
+      busy: false,
+      task: null,
+      jobs: [
+        { id: 'a1', kind: 'chat', subjectName: 'Linear Algebra', startedAt: NOW },
+        { id: 'a2', kind: 'lesson-generation', subjectName: 'DB Systems', startedAt: NOW },
+      ],
+    });
+    renderSidebar();
+    const btn = await screen.findByRole('button', { name: 'Working: Linear Algebra' });
+    expect(btn.querySelector('.agent-dot')?.className).toContain('busy');
+    fireEvent.click(btn);
+    expect(screen.getByText(/Teacher turn — Linear Algebra/)).toBeTruthy();
+    expect(screen.getByText(/Writing lessons — DB Systems/)).toBeTruthy();
+  });
+
+  it('shows "Finished" after a busy→idle transition, then returns to "Agent idle"', async () => {
+    vi.useFakeTimers();
+    vi.mocked(client.getAgentStatus)
+      .mockResolvedValueOnce({
+        busy: true,
+        task: null,
+        jobs: [{ id: 'a1', kind: 'chat', subjectName: 'Linear Algebra', startedAt: NOW }],
+      })
+      .mockResolvedValue({ busy: false, task: null, jobs: [] });
+    renderSidebar();
+    await act(async () => {});
+    expect(screen.getByRole('button', { name: 'Working: Linear Algebra' })).toBeTruthy();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    const done = screen.getByRole('button', { name: 'Finished' });
+    expect(done.querySelector('.agent-dot')?.className).toContain('done');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(screen.getByRole('button', { name: 'Agent idle' })).toBeTruthy();
+  });
+
+  it('does not show "Finished" on a cold idle start', async () => {
+    vi.useFakeTimers();
+    renderSidebar();
+    await act(async () => {});
+    expect(screen.getByRole('button', { name: 'Agent idle' })).toBeTruthy();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(screen.queryByRole('button', { name: 'Finished' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Agent idle' })).toBeTruthy();
   });
 
   it('falls back to the raw kind when unknown', async () => {
@@ -244,7 +297,8 @@ describe('Sidebar agent status', () => {
       jobs: [{ id: 'j9', kind: 'weird-kind', subject: 'DB Systems', status: 'queued' }],
     });
     renderSidebar();
-    fireEvent.click(await screen.findByRole('button', { name: 'Agent idle' }));
+    // jobs alone still count as work, even with no setup task
+    fireEvent.click(await screen.findByRole('button', { name: /^Working/ }));
     expect(screen.getByText(/weird-kind — DB Systems: queued/)).toBeTruthy();
   });
 });

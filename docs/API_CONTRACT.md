@@ -101,8 +101,8 @@ Citation markers (`【file.pdf · p12】`) are **inline in `ChatMessage.text`** 
 `GET /api/health`
 → `200 { ok: true; opencode: { running: boolean; pid: ID | null; port: number; healthy: boolean } }`
 
-`GET /api/agent/status` — live agent monitor: headless course-setup runs in flight + non-terminal pipeline jobs.
-→ `200 { busy: boolean; task: { kind: "lesson-generation"; subjectId: ID; subjectName: string; startedAt: ISO } | null; jobs: { id: ID; kind: JobKind; subject: string; status: "queued" | "running" | "cancelling"; done: number; total: number }[] }` (`task` = first in-flight setup run; `jobs` mirror the health jobs list)
+`GET /api/agent/status` — live agent monitor: headless course-setup runs, in-flight chat turns (where lesson writing/generation happens), and non-terminal pipeline jobs.
+→ `200 { busy: boolean; task: { kind: "lesson-generation" | "chat"; subjectId: ID; subjectName: string; startedAt: ISO } | null; jobs: ({ id: ID; kind: JobKind; subject: string; status: "queued" | "running" | "cancelling"; done: number; total: number } | { id: ID; kind: "chat" | "lesson-generation"; subjectId: ID; subjectName: string; startedAt: ISO })[] }` (`task` = first in-flight setup run, else newest activity; `jobs` = health job rows followed by in-flight activity rows; identities are per-process, so a restart forgets in-flight turns)
 
 ### Subjects
 
