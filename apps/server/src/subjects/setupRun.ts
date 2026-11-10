@@ -18,7 +18,7 @@ export function activeSetupRuns(): ActiveSetupRun[] {
 }
 
 /** The prompt for the server-initiated headless course-setup run. */
-export function setupPrompt(subjectName: string): string {
+function setupPrompt(subjectName: string): string {
   return [
     `COURSE SETUP RUN for "${subjectName}" — headless one-shot; nobody can answer you mid-run.`,
     '',

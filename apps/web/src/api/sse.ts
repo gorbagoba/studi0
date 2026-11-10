@@ -62,6 +62,8 @@ export interface ChatStreamHandlers {
   onDone?: (payload: { messageCount: number }) => void;
   onError?: (err: ApiErrorPayload['error']) => void;
   onSetup?: (payload: SetupEvent) => void;
+  /** Tool the agent ran mid-turn (`search_material`, `write_lesson`, …). */
+  onTool?: (e: { name: string; ok: boolean }) => void;
 }
 
 /** Parses one SSE frame ("event: <name>\ndata: <json>"). Returns null for comments/empty frames. */
@@ -132,6 +134,9 @@ export async function postChatStream(
         break;
       case 'setup':
         handlers.onSetup?.(data as SetupEvent);
+        break;
+      case 'tool':
+        handlers.onTool?.(data as { name: string; ok: boolean });
         break;
     }
   };

@@ -29,6 +29,7 @@ describe('stripStepMarkers (QA #8: markers never reach the chat DOM)', () => {
     const encoder = new TextEncoder();
     const frames = [
       'event: token\ndata: {"text":"§1§ Heaps "}\n\n',
+      'event: tool\ndata: {"name":"search_material","ok":true}\n\n',
       'event: token\ndata: {"text":"are fun §2§\\n"}\n\n',
       'event: done\ndata: {"messageCount":2}\n\n',
     ];
@@ -48,10 +49,16 @@ describe('stripStepMarkers (QA #8: markers never reach the chat DOM)', () => {
       ),
     );
     const tokens: string[] = [];
+    const tools: { name: string; ok: boolean }[] = [];
     let done = false;
-    await postChatStream('ses1', { content: 'hi' }, { onToken: (t) => tokens.push(t), onDone: () => (done = true) });
+    await postChatStream(
+      'ses1',
+      { content: 'hi' },
+      { onToken: (t) => tokens.push(t), onTool: (e) => tools.push(e), onDone: () => (done = true) },
+    );
     // '§2§' plus one trailing whitespace char are consumed, like the server-side strip
     expect(tokens.join('')).toBe('Heaps are fun ');
+    expect(tools).toEqual([{ name: 'search_material', ok: true }]);
     expect(done).toBe(true);
   });
 });

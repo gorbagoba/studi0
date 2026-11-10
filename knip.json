@@ -1,5 +1,8 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignoreBinaries": ["netstat"],
+  "workspaces": {
+    ".": { "entry": ["scripts/*.mjs"] }
+  },
+  "ignoreBinaries": ["netstat", "graphify"],
   "ignoreFiles": ["scripts/**/*.d.mts"]
 }

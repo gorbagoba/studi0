@@ -12,6 +12,17 @@ type LogItem =
   | { kind: 'message'; message: ChatMessage }
   | { kind: 'note'; text: string; lessonPath?: string };
 
+// Waiting should read like the teacher, not like a tool log.
+const TOOL_LABELS: Record<string, string> = {
+  search_material: 'Searching your course material…',
+  read_material: 'Reading the material…',
+  grep_material: 'Looking up exact terms…',
+  graphify_query: 'Consulting the knowledge graph…',
+  write_lesson: 'Writing the lesson…',
+  save_quiz: 'Saving practice questions…',
+  update_corrections: 'Noting that for later…',
+};
+
 export function ChatPanel({
   subjectId,
   lessonId,
@@ -28,6 +39,7 @@ export function ChatPanel({
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [log, setLog] = useState<LogItem[]>([]);
   const [streamText, setStreamText] = useState<string | null>(null);
+  const [tool, setTool] = useState<string | null>(null);
   const streamRef = useRef('');
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -149,6 +161,7 @@ export function ChatPanel({
     ]);
     streamRef.current = '';
     setStreamText('');
+    setTool(null);
     try {
       // lazy session creation: the first message of a chat mints the session
       let target: ChatSession | null = session;
@@ -184,7 +197,12 @@ export function ChatPanel({
               { kind: 'note', text: 'Chat auto-rotated — a summary was saved to learning-records; the conversation continues fresh.' },
             ]);
           },
-          onError: (err) => setError(`${err.code}: ${err.message}`),
+          onTool: ({ name }) => setTool(name), // ok:false keeps the same label — the agent recovers
+          onDone: () => setTool(null),
+          onError: (err) => {
+            setTool(null);
+            setError(`${err.code}: ${err.message}`);
+          },
         },
       );
     } catch (e) {
@@ -192,6 +210,7 @@ export function ChatPanel({
     }
     const finalText = streamRef.current;
     setStreamText(null);
+    setTool(null);
     if (finalText.trim() !== '') {
       setLog((l) => [
         ...l,
@@ -316,7 +335,10 @@ export function ChatPanel({
                 <span className="msg-role">Teacher</span>
                 <div className="msg-text">
                   {streamText === '' ? (
-                    <span className="thinking" aria-label="Teacher is thinking">
+                    <span className="thinking" aria-label={tool === null ? 'Teacher is thinking' : undefined}>
+                      {tool !== null && (
+                        <span className="thinking-label">{TOOL_LABELS[tool] ?? 'Working…'}</span>
+                      )}
                       <span className="dot" />
                       <span className="dot" />
                       <span className="dot" />

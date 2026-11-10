@@ -38,7 +38,7 @@ function queryTerms(query: string, cap = 12): string[] {
 }
 
 /** FTS5 MATCH query: quote each term, OR-join ('' when no usable terms) */
-export function ftsMatchQuery(query: string): string {
+function ftsMatchQuery(query: string): string {
   return queryTerms(query)
     .map((t) => `"${t}"`)
     .join(' OR ');

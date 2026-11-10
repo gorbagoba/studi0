@@ -29,6 +29,28 @@ export interface Config {
   chatBaseUrl: string;
   chatApiKey: string | null;
   chatModel: string;
+  /** stronger quality-first model for generate_lesson delegation */
+  chatModelLesson: string;
+  /** chat_template_kwargs for the lesson writer (x-test-2 wants {thinking:false}) */
+  chatLessonTemplateKwargs: Record<string, unknown>;
+  /** send chat_template_kwargs {enable_thinking:false} — off only when the gateway/model rejects it */
+  chatDisableThinking: boolean;
+}
+
+/** Lesson-writer template kwargs from JSON env; malformed input falls back (one warn). */
+function parseLessonTemplateKwargs(raw: string | undefined): Record<string, unknown> {
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // fall through to the warning below
+    }
+    console.warn('[config] CHAT_MODEL_LESSON_TEMPLATE_KWARGS is not a JSON object — using {"thinking":false}');
+  }
+  return { thinking: false };
 }
 
 // repo root = apps/server/src -> up 3
@@ -54,6 +76,9 @@ try {
       'CHAT_BASE_URL',
       'CHAT_API_KEY',
       'CHAT_MODEL',
+      'CHAT_MODEL_LESSON',
+      'CHAT_MODEL_LESSON_TEMPLATE_KWARGS',
+      'CHAT_DISABLE_THINKING',
     ]);
     if (KNOWN_ENV_KEYS.has(m[1]) && process.env[m[1]] === undefined) {
       process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
@@ -104,5 +129,9 @@ export function makeConfig(dataDir?: string): Config {
     chatBaseUrl: process.env.CHAT_BASE_URL ?? '',
     chatApiKey: process.env.CHAT_API_KEY ?? null,
     chatModel: process.env.CHAT_MODEL ?? '',
+    chatModelLesson: process.env.CHAT_MODEL_LESSON ?? 'x-test-2',
+    chatLessonTemplateKwargs: parseLessonTemplateKwargs(process.env.CHAT_MODEL_LESSON_TEMPLATE_KWARGS),
+    // chat templates ignore unknown kwargs, so opting out is only for gateways that reject them
+    chatDisableThinking: !['false', '0'].includes((process.env.CHAT_DISABLE_THINKING ?? '').toLowerCase()),
   };
 }

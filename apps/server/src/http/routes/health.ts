@@ -4,7 +4,7 @@ import type { Ctx } from '../../context.js';
 import { activeSetupRuns } from '../../subjects/setupRun.js';
 
 /** Live agent/monitor snapshot (setup runs + non-terminal pipeline jobs). */
-export interface AgentStatus {
+interface AgentStatus {
   busy: boolean;
   task: { kind: 'lesson-generation'; subjectId: string; subjectName: string; startedAt: string } | null;
   jobs: Array<{

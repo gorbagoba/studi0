@@ -19,7 +19,7 @@ pnpm dlx knip
 pnpm typecheck && pnpm lint && pnpm test && pnpm build
 ```
 
-Expected baseline: **228 tests** (server 148 + web 80) — re-baseline this line after test-adding waves. Knip deletions that break a test mean the
+Expected baseline: **236 tests** (server 154 + web 82) — re-baseline this line after test-adding waves. Knip deletions that break a test mean the
 "dead" symbol was used by the test — restore the export, not the test.
 
 ## 3. Junk scan

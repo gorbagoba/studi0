@@ -20,7 +20,7 @@ export interface StreamDelta {
   toolCalls?: ToolCallAccum[];
 }
 
-export interface OpenAiToolCall {
+interface OpenAiToolCall {
   id: string;
   type: 'function';
   function: { name: string; arguments: string };
@@ -37,6 +37,19 @@ export interface ChatBody {
   model: string;
   messages: LlmMessage[];
   tools?: unknown[];
+  max_tokens?: number;
+  /** vLLM chat-template kwargs; merged over the config default, caller wins */
+  chat_template_kwargs?: Record<string, unknown>;
+}
+
+/** Request payload: stream flag, plus thinking-off kwargs unless config or caller opts out. */
+function requestBody(cfg: Config, body: ChatBody, stream: boolean): Record<string, unknown> {
+  if (!cfg.chatDisableThinking) return { ...body, stream };
+  return {
+    ...body,
+    stream,
+    chat_template_kwargs: { enable_thinking: false, ...body.chat_template_kwargs },
+  };
 }
 
 function url(cfg: Config): string {
@@ -63,7 +76,7 @@ export async function chatCompletion(cfg: Config, body: ChatBody, signal: AbortS
   const res = await fetch(url(cfg), {
     method: 'POST',
     headers: headers(cfg),
-    body: JSON.stringify({ ...body, stream: false }),
+    body: JSON.stringify(requestBody(cfg, body, false)),
     signal,
   });
   if (!res.ok) throw await httpError(res);
@@ -96,7 +109,7 @@ export async function* streamCompletion(
   const res = await fetch(url(cfg), {
     method: 'POST',
     headers: headers(cfg),
-    body: JSON.stringify({ ...body, stream: true }),
+    body: JSON.stringify(requestBody(cfg, body, true)),
     signal,
   });
   if (!res.ok) throw await httpError(res);

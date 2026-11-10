@@ -13,7 +13,7 @@ import { safeWriteFile } from '../fs/safeWrite.js';
 import { hybridSearch } from '../retrieval/search.js';
 import { ensureIndex } from '../retrieval/index.js';
 import { HttpError } from '../util/errors.js';
-import { streamCompletion, type LlmMessage, type ToolCallAccum } from './llm.js';
+import { streamCompletion, chatCompletion, type LlmMessage, type ToolCallAccum } from './llm.js';
 import type { Db } from '../db/index.js';
 import type { Config } from '../config.js';
 import type { EventBus, Send } from '../http/sse.js';
@@ -29,12 +29,18 @@ export const TURN_TIMEOUT_MS = 15 * 60_000;
 
 /** Tool rounds per turn — bounds a runaway tool loop. */
 const MAX_TOOL_ROUNDS = 8;
+/** Transcript messages sent per turn — prompt tokens otherwise grow every turn. */
+const HISTORY_MAX_MESSAGES = 40;
 const TOOL_RESULT_CAP = 4096;
 const GREP_MAX_HITS = 40;
 const READ_MAX_BYTES = 20_000_000;
 // shortcut: 200k-char read cap truncates big material files; upgrade to ranged reads if the teacher needs more
 const READ_MAX_CHARS = 200_000;
 const GRAPHIFY_TIMEOUT_MS = 30_000;
+const LESSON_EVIDENCE_MAX_CHARS = 8_000;
+const LESSON_MISSION_MAX_CHARS = 2_000;
+/** the lesson writer is slow (one ~60s completion on big lessons) but bounded */
+const LESSON_WRITER_TIMEOUT_MS = 10 * 60_000;
 
 export interface NativeTurnDeps {
   db: Db;
@@ -69,6 +75,7 @@ const NATIVE_TOOLS_SECTION = `## Native tools (this server runs you natively)
 You are not running inside opencode here: there is no shell, no bash and no file-edit tool. Use exactly these tools (OpenAI function calling). Reasoning traces and tool plumbing are invisible to the student — never mention tools, JSON or internal steps in your visible reply text.
 
 - write_lesson { "path", "html" } — write/overwrite a lesson file. path MUST match lessons/NNNN-slug.html (4-digit number, slug, .html). All lesson rules above apply unchanged (first-line marker, template, MathJax when math is present).
+- generate_lesson { "path", "topic" } — delegate writing a full lesson to the lesson writer (slow, highest quality); use it instead of authoring big HTML yourself; give it a precise topic and evidence-worthy scope.
 - read_material { "path" } — read a file under the course root. Allowed: material/**, graphify-out/**, syllabus.md, MISSION.md, corrections.md, NOTES.md.
 - search_material { "query" } — PRIMARY evidence tool: hybrid semantic+keyword search over the whole course (extracted PDF knowledge included). Use it FIRST for topical questions; fall back to read_material for full files and grep_material only for exact strings (codes, identifiers).
 - grep_material { "query" } — literal case-insensitive search over material/ and graphify-out/wiki/; returns file:line hits (max ${GREP_MAX_HITS}).
@@ -91,6 +98,22 @@ const NATIVE_TOOLS = [
           html: { type: 'string', description: 'the complete self-contained HTML page' },
         },
         required: ['path', 'html'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'generate_lesson',
+      description:
+        'Delegate writing a complete lesson to the lesson writer model (slow, highest quality). Use instead of authoring big HTML yourself.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'lessons/NNNN-slug.html — 4-digit number, slug, .html' },
+          topic: { type: 'string', description: 'precise topic and evidence-worthy scope of the lesson' },
+        },
+        required: ['path', 'topic'],
       },
     },
   },
@@ -215,10 +238,14 @@ export async function runNativeTurn(
   const { db, cfg } = deps;
   chatRepo.insertMessage(db, session.id, 'user', preamble ? `${preamble}\n\n${content}` : content);
 
-  // history already ends with the just-persisted user message (preamble included)
+  // history already ends with the just-persisted user message (preamble included).
+  // cap the window, then start at its first user message: an orphan assistant/tool
+  // head is rejected by OpenAI-compatible servers.
+  const recent = chatRepo.listMessages(db, session.id).slice(-HISTORY_MAX_MESSAGES);
+  const firstUser = recent.findIndex((m) => m.role === 'user');
   const messages: LlmMessage[] = [
     { role: 'system', content: systemPrompt() },
-    ...chatRepo.listMessages(db, session.id).map((m) => ({ role: m.role, content: m.text })),
+    ...recent.slice(Math.max(0, firstUser)).map((m) => ({ role: m.role, content: m.text })),
   ];
 
   const ac = new AbortController();
@@ -256,7 +283,7 @@ export async function runNativeTurn(
       for (const call of calls) {
         let result: ToolResult;
         try {
-          result = await executeTool(deps, subject, lesson, before, send, call);
+          result = await executeTool(deps, subject, lesson, before, send, call, ac.signal);
         } catch (e) {
           result = { ok: false, error: e instanceof HttpError ? e.message : String(e) };
         }
@@ -288,6 +315,7 @@ async function executeTool(
   before: Map<string, string>,
   send: Send,
   call: ToolCallAccum,
+  signal: AbortSignal,
 ): Promise<ToolResult> {
   let args: Record<string, unknown>;
   try {
@@ -302,6 +330,8 @@ async function executeTool(
   switch (call.name) {
     case 'write_lesson':
       return writeLesson(deps, subject, before, send, args);
+    case 'generate_lesson':
+      return generateLesson(deps, subject, before, send, signal, args);
     case 'read_material':
       return readMaterial(subject, args);
     case 'search_material':
@@ -319,6 +349,13 @@ async function executeTool(
   }
 }
 
+/** Both lesson-writing tools share this path rule (traversal rejected before any write). */
+function assertLessonPath(rel: string, tool: string): void {
+  if (!LESSON_PATH_RE.test(rel)) {
+    throw new HttpError('VALIDATION', `${tool} path must match lessons/NNNN-slug.html, got: ${rel}`);
+  }
+}
+
 async function writeLesson(
   deps: NativeTurnDeps,
   subject: SubjectRow,
@@ -328,9 +365,19 @@ async function writeLesson(
 ): Promise<ToolResult> {
   const rel = typeof args.path === 'string' ? args.path : '';
   const html = typeof args.html === 'string' ? args.html : '';
-  if (!LESSON_PATH_RE.test(rel)) {
-    throw new HttpError('VALIDATION', `write_lesson path must match lessons/NNNN-slug.html, got: ${rel}`);
-  }
+  assertLessonPath(rel, 'write_lesson');
+  return writeLessonFile(deps, subject, before, send, rel, html);
+}
+
+/** Shared tail: write the file, then index + emit + feed questions immediately. */
+async function writeLessonFile(
+  deps: NativeTurnDeps,
+  subject: SubjectRow,
+  before: Map<string, string>,
+  send: Send,
+  rel: string,
+  html: string,
+): Promise<ToolResult> {
   await safeWriteFile(safeResolve(subject.path, rel), html);
   // index + emit immediately; the end-of-turn safety net skips these (before is synced)
   const rows = await detectAndIndexLessons(deps.db, subject, before, deps.events);
@@ -339,6 +386,83 @@ async function writeLesson(
     deps.feedQuestions(subject, row);
   }
   return { ok: true, path: rel };
+}
+
+const LESSON_WRITER_SYSTEM =
+  'You are the lesson writer. Output ONLY a complete self-contained HTML lesson document starting with <!DOCTYPE html> and ending with </html>. No markdown fences, no commentary.';
+
+/**
+ * Delegate lesson authoring to the stronger quality-first model as plain content
+ * (tool-call arguments truncate big HTML on our gateways), then save it here.
+ */
+async function generateLesson(
+  deps: NativeTurnDeps,
+  subject: SubjectRow,
+  before: Map<string, string>,
+  send: Send,
+  signal: AbortSignal,
+  args: Record<string, unknown>,
+): Promise<ToolResult> {
+  const rel = typeof args.path === 'string' ? args.path : '';
+  const topic = typeof args.topic === 'string' ? args.topic.trim() : '';
+  assertLessonPath(rel, 'generate_lesson');
+  if (!topic) return { ok: false, error: 'topic is required' };
+
+  const { db, cfg } = deps;
+  await ensureIndex(db, subject, { log: (m) => console.log(`[generate_lesson] ${m}`) });
+  let evidence = '';
+  try {
+    const hits = await hybridSearch(db, subject.id, topic, { k: 10, subjectPath: subject.path });
+    if (hits.length === 0) console.log('[generate_lesson] no material hits — writing from general knowledge');
+    evidence = hits
+      .map((h) => `- [${h.relPath} — ${h.title}]\n  ${h.snippet}`)
+      .join('\n')
+      .slice(0, LESSON_EVIDENCE_MAX_CHARS);
+  } catch (e) {
+    console.log(`[generate_lesson] material search failed: ${String(e)}`);
+  }
+  const mission = (await readFile(safeResolve(subject.path, 'MISSION.md'), 'utf8').catch(() => '')).slice(
+    0,
+    LESSON_MISSION_MAX_CHARS,
+  );
+
+  const prompt = `Course: ${subject.name}
+Topic: ${topic}
+
+Write the lesson. Rules:
+- Open with a pretest: two guess-first questions before any explanation.
+- Teach a worked example before practice.
+- End with a teach-back checkpoint.
+- Use MathJax only if the lesson contains math.
+- Cite sources inline where the material evidence below supports a claim.
+${mission ? `\nStudent mission (pace, style, level):\n${mission}\n` : ''}
+Material evidence:
+${evidence || '(none found — teach from general knowledge)'}`;
+
+  const writerCfg: Config = { ...cfg, chatModel: cfg.chatModelLesson, chatDisableThinking: false };
+  const res = (await chatCompletion(
+    writerCfg,
+    {
+      model: cfg.chatModelLesson,
+      messages: [
+        { role: 'system', content: LESSON_WRITER_SYSTEM },
+        { role: 'user', content: prompt },
+      ],
+      max_tokens: 16000,
+      chat_template_kwargs: cfg.chatLessonTemplateKwargs,
+    },
+    AbortSignal.any([signal, AbortSignal.timeout(LESSON_WRITER_TIMEOUT_MS)]),
+  )) as { choices?: { message?: { content?: string } }[] };
+
+  const html = (res.choices?.[0]?.message?.content ?? '')
+    .trim()
+    .replace(/^```html\s*/i, '')
+    .replace(/```$/, '')
+    .trim();
+  if (!/<!doctype html>/i.test(html) || !/<\/html>/i.test(html)) {
+    return { ok: false, error: 'lesson HTML incomplete — retry with a narrower topic' };
+  }
+  return writeLessonFile(deps, subject, before, send, rel, html);
 }
 
 async function readMaterial(subject: SubjectRow, args: Record<string, unknown>): Promise<ToolResult> {

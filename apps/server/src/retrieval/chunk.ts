@@ -148,7 +148,7 @@ function pushChunks(out: Chunk[], relPath: string, heading: string, paras: strin
   flush();
 }
 
-export function fileKind(ext: string): 'md' | 'html' | 'plain' | null {
+function fileKind(ext: string): 'md' | 'html' | 'plain' | null {
   if (ext === '.md') return 'md';
   if (ext === '.html' || ext === '.htm') return 'html';
   if (TEXT_EXT.has(ext)) return 'plain';

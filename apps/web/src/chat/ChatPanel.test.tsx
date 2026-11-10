@@ -1,8 +1,10 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { fireEvent } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatPanel } from './ChatPanel';
 import type { ChatSession } from '@studi0/shared';
+import { postChatStream } from '../api/sse';
+import type { ChatStreamHandlers } from '../api/sse';
 import { AppProvider } from '../state/app';
 
 const NOW = '2026-10-31T00:00:00.000Z';
@@ -60,5 +62,59 @@ describe('ChatPanel session-list flow', () => {
     renderPanel({ subjectId: 's1', lessonId: 'l1' });
     expect(await screen.findByRole('textbox', { name: 'Message the teacher' })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Your chats' })).toBeNull();
+  });
+});
+
+describe('ChatPanel tool activity', () => {
+  let handlers: ChatStreamHandlers | null = null;
+  let releaseStream: (() => void) | null = null;
+
+  beforeEach(() => {
+    handlers = null;
+    releaseStream = null;
+    // hold the stream open so tests can push tool/token/done events like the server does
+    vi.mocked(postChatStream).mockImplementation((_sessionId, _body, h) => {
+      handlers = h;
+      return new Promise<void>((resolve) => {
+        releaseStream = resolve;
+      });
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.mocked(postChatStream).mockReset();
+  });
+
+  async function startTurn(): Promise<void> {
+    renderPanel({ subjectId: 's1', lessonId: 'l1' });
+    const box = await screen.findByRole('textbox', { name: 'Message the teacher' });
+    fireEvent.change(box, { target: { value: 'hi' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(handlers).not.toBeNull());
+  }
+
+  it('shows the friendly tool label before tokens, then the message text', async () => {
+    await startTurn();
+    act(() => handlers!.onTool!({ name: 'search_material', ok: true }));
+    expect(screen.getByText('Searching your course material…')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Streaming…' })).toBeTruthy();
+
+    act(() => handlers!.onToken!('Heaps are fun'));
+    expect(screen.queryByText('Searching your course material…')).toBeNull();
+    expect(screen.getByText('Heaps are fun')).toBeTruthy();
+
+    act(() => handlers!.onDone!({ messageCount: 2 }));
+    await act(async () => releaseStream!());
+  });
+
+  it('clears the tool label when the turn is done (ok:false reads the same)', async () => {
+    await startTurn();
+    act(() => handlers!.onTool!({ name: 'write_lesson', ok: false }));
+    expect(screen.getByText('Writing the lesson…')).toBeTruthy();
+
+    act(() => handlers!.onDone!({ messageCount: 1 }));
+    expect(screen.queryByText('Writing the lesson…')).toBeNull();
+    await act(async () => releaseStream!());
   });
 });

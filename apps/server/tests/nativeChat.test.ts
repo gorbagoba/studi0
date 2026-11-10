@@ -2,6 +2,7 @@ import { describe, expect, it, afterEach, vi } from 'vitest';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { makeHarness } from './helpers';
+import * as chatRepo from '../src/db/repos/chat.js';
 import { chatCompletion, streamCompletion, type StreamDelta } from '../src/teacher/llm.js';
 import { makeConfig, type Config } from '../src/config.js';
 import type { OcClient } from '../src/teacher/sdk.js';
@@ -116,6 +117,28 @@ describe('llm client', () => {
       const msg = (e as Error).message;
       return (e as Error).name === 'HttpError' && msg.includes('401') && !msg.includes('sk-secret');
     });
+  });
+
+  it('sends thinking-off chat_template_kwargs by default, omits them when disabled', async () => {
+    const prev = process.env.CHAT_DISABLE_THINKING;
+    const body = { model: 'm', messages: [{ role: 'user' as const, content: 'hi' }] };
+    const drain = async (cfg: Config) => {
+      for await (const _ of streamCompletion(cfg, body, new AbortController().signal)) void _;
+    };
+    try {
+      delete process.env.CHAT_DISABLE_THINKING;
+      const on = captureFetch([sseResponse(chunk({ content: 'ok' }), chunk({}, 'stop'), DONE)]);
+      await drain(makeConfig());
+      expect(JSON.parse(String(on[0].init.body)).chat_template_kwargs).toEqual({ enable_thinking: false });
+
+      process.env.CHAT_DISABLE_THINKING = 'false';
+      const off = captureFetch([sseResponse(chunk({ content: 'ok' }), chunk({}, 'stop'), DONE)]);
+      await drain(makeConfig());
+      expect(JSON.parse(String(off[0].init.body))).not.toHaveProperty('chat_template_kwargs');
+    } finally {
+      if (prev === undefined) delete process.env.CHAT_DISABLE_THINKING;
+      else process.env.CHAT_DISABLE_THINKING = prev;
+    }
   });
 });
 
@@ -386,5 +409,157 @@ describe('native chat engine', () => {
     };
     const toolMsg = second.messages.find((m) => m.role === 'tool');
     expect(toolMsg?.content).toContain('material/notes.md');
+  });
+
+  it('caps the transcript at 40 messages and starts it with a user message', async () => {    h = await makeHarness({ env: NATIVE_ENV });
+    const id = await createSubject('ChatWindow');
+    patchOc(h);
+    h.ctx.feedQuestions = () => undefined;
+    const session = (
+      await h.app.inject({ method: 'POST', url: `/api/subjects/${id}/chat/sessions`, payload: {} })
+    ).json() as { id: string };
+    // 60 prior messages, alternating; the turn adds a 61st user message
+    for (let i = 0; i < 60; i++) {
+      chatRepo.insertMessage(h.ctx.db, session.id, i % 2 === 0 ? 'user' : 'assistant', `m${i}`);
+    }
+    const calls = captureFetch([sseResponse(chunk({ content: 'ok' }), chunk({}, 'stop'), DONE)]);
+    const res = await h.app.inject({
+      method: 'POST',
+      url: `/api/chat/sessions/${session.id}/messages`,
+      payload: { content: 'now' },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(String(calls[0].init.body)) as { messages: { role: string }[] };
+    expect(body.messages[0].role).toBe('system');
+    expect(body.messages.length).toBeLessThanOrEqual(41); // 40 history + system
+    expect(body.messages[1].role).toBe('user');
+  });
+});
+
+describe('generate_lesson (lesson writer delegation)', () => {
+  const VALID_HTML =
+    '<!DOCTYPE html><html><head><title>Heaps</title></head><body><h1>Heaps</h1></body></html>';
+
+  async function startSession(name: string): Promise<{ id: string; sessionId: string; root: string }> {
+    h = await makeHarness({ env: NATIVE_ENV });
+    const id = await createSubject(name);
+    patchOc(h);
+    const root = (h.ctx.db.prepare('SELECT path FROM subjects WHERE id = ?').get(id) as { path: string }).path;
+    const session = (
+      await h.app.inject({ method: 'POST', url: `/api/subjects/${id}/chat/sessions`, payload: {} })
+    ).json() as { id: string };
+    return { id, sessionId: session.id, root };
+  }
+
+  const toolCall = (name: string, args: object) =>
+    sseResponse(
+      chunk({ tool_calls: [{ index: 0, id: 'g1', function: { name, arguments: JSON.stringify(args) } }] }),
+      chunk({}, 'tool_calls'),
+      DONE,
+    );
+  const writerResponse = (content: string) =>
+    new Response(JSON.stringify({ choices: [{ message: { content } }] }), { status: 200 });
+  const finalText = () => sseResponse(chunk({ content: 'Lesson ready.' }), chunk({}, 'stop'), DONE);
+
+  it('writes the writer HTML, emits the lesson event and reports ok to the model', async () => {
+    const { sessionId, root } = await startSession('ChatGenLesson');
+    let fed = 0;
+    h!.ctx.feedQuestions = () => {
+      fed++;
+    };
+    await mkdir(path.join(root, 'material'), { recursive: true });
+    await writeFile(path.join(root, 'material', 'notes.md'), '# Heap sort\n\nHeap sort builds a heap then extracts the max.\n');
+
+    const calls = captureFetch([
+      toolCall('generate_lesson', { path: 'lessons/0002-heaps.html', topic: 'heap sort' }),
+      writerResponse(VALID_HTML),
+      finalText(),
+    ]);
+    const res = await h!.app.inject({
+      method: 'POST',
+      url: `/api/chat/sessions/${sessionId}/messages`,
+      payload: { content: 'write me a lesson on heaps' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(dataOf(res.body, 'tool')).toEqual([{ name: 'generate_lesson', ok: true }]);
+    expect(eventsOf(res.body)).toContain('lesson');
+    expect(fed).toBe(1);
+    await expect(readFile(path.join(root, 'lessons', '0002-heaps.html'), 'utf8')).resolves.toBe(VALID_HTML);
+
+    // writer request: lesson model, its own kwargs, big token budget, evidence + rules in the prompt
+    const writer = JSON.parse(String(calls[1].init.body)) as {
+      model: string;
+      max_tokens: number;
+      chat_template_kwargs: Record<string, unknown>;
+      messages: { role: string; content: string }[];
+    };
+    expect(writer.model).toBe('x-test-2');
+    expect(writer.max_tokens).toBe(16000);
+    expect(writer.chat_template_kwargs).toEqual({ thinking: false });
+    expect(writer.messages[1].content).toContain('material/notes.md');
+    expect(writer.messages[1].content).toContain('teach-back');
+
+    // the tool result fed back to the chat model
+    const next = JSON.parse(String(calls[2].init.body)) as { messages: { role: string; content: string }[] };
+    const toolMsg = next.messages.find((m) => m.role === 'tool');
+    expect(JSON.parse(toolMsg?.content ?? '{}')).toMatchObject({ ok: true, path: 'lessons/0002-heaps.html' });
+  });
+
+  it('rejects incomplete HTML without writing a file', async () => {
+    const { sessionId, root } = await startSession('ChatGenIncomplete');
+    h!.ctx.feedQuestions = () => undefined;
+    const calls = captureFetch([
+      toolCall('generate_lesson', { path: 'lessons/0003-cut.html', topic: 'heaps' }),
+      writerResponse('<!DOCTYPE html><html><body><h1>Heaps'),
+      finalText(),
+    ]);
+    const res = await h!.app.inject({
+      method: 'POST',
+      url: `/api/chat/sessions/${sessionId}/messages`,
+      payload: { content: 'write it' },
+    });
+    expect(dataOf(res.body, 'tool')).toEqual([{ name: 'generate_lesson', ok: false }]);
+    await expect(stat(path.join(root, 'lessons', '0003-cut.html'))).rejects.toThrow();
+    const next = JSON.parse(String(calls[2].init.body)) as { messages: { role: string; content: string }[] };
+    expect(next.messages.find((m) => m.role === 'tool')?.content).toContain('incomplete');
+  });
+
+  it('rejects paths outside lessons/NNNN-slug.html before calling the writer', async () => {
+    const { sessionId, root } = await startSession('ChatGenTraversal');
+    h!.ctx.feedQuestions = () => undefined;
+    const calls = captureFetch([
+      toolCall('generate_lesson', { path: 'lessons/../../x.html', topic: 'heaps' }),
+      finalText(),
+    ]);
+    const res = await h!.app.inject({
+      method: 'POST',
+      url: `/api/chat/sessions/${sessionId}/messages`,
+      payload: { content: 'write it' },
+    });
+    expect(dataOf(res.body, 'tool')).toEqual([{ name: 'generate_lesson', ok: false }]);
+    expect(calls).toHaveLength(2); // no writer call happened
+    await expect(stat(path.join(root, 'x.html'))).rejects.toThrow();
+    await expect(stat(path.join(h!.dataDir, 'x.html'))).rejects.toThrow();
+  });
+});
+
+describe('lesson writer config', () => {
+  it('parses CHAT_MODEL_LESSON_TEMPLATE_KWARGS and falls back on bad JSON', () => {
+    const key = 'CHAT_MODEL_LESSON_TEMPLATE_KWARGS';
+    const prev = process.env[key];
+    try {
+      process.env[key] = '{"thinking":true}';
+      expect(makeConfig().chatLessonTemplateKwargs).toEqual({ thinking: true });
+
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+      process.env[key] = '{oops';
+      expect(makeConfig().chatLessonTemplateKwargs).toEqual({ thinking: false });
+      expect(warn.mock.calls.flat().join(' ')).toContain(key);
+      warn.mockRestore();
+    } finally {
+      if (prev === undefined) delete process.env[key];
+      else process.env[key] = prev;
+    }
   });
 });

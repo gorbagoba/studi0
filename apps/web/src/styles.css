@@ -1664,6 +1664,10 @@ dl.diag-list dd.diag-status {
   padding: 0.2rem 0;
 }
 
+.thinking .thinking-label {
+  color: var(--muted);
+}
+
 .thinking .dot {
   width: 0.42rem;
   height: 0.42rem;
