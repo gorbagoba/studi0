@@ -28,7 +28,7 @@
 - US5: As the student, I want to cancel a running pipeline job, so a wrong upload doesn't waste minutes.
 - US6: As the student, I want a "stale" badge when `material/` changed after the last build, so I never study from an outdated graph.
 - US7: As the student, I want partial-failure reporting (which files/extracts failed) rather than a fake-complete graph, per graphify's honesty rules.
-- US8: As the student, I want the extraction to use a fixed ontology (Concept, Algorithm, DataStructure, Proof, Pitfall, ExamNote; prerequisite_of, uses, confused_with, contradicts), so the graph stays consistent across weeks.
+- US8: As the student, I want the extraction to use a fixed ontology (Concept, Algorithm, DataStructure, Proof, Pitfall, ExamNote; prerequisite_of, uses, confused_with, contradicts, related_to), so the graph stays consistent across weeks.
 - US9: As the student, I want a verification pass over graph edges (sampled, source-checked), so wrong edges are flagged before they reach lessons.
 - US10: As the student, I want to edit the generated wiki pages to correct them, and have edited pages treated as canon by the teacher.
 - US11: As the student, I want a manual "re-cluster" button, so node bloat mid-semester is my call, not a surprise job.

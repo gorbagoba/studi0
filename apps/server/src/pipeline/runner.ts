@@ -232,11 +232,8 @@ export const makeRunPipeline =
       let assessed = graph;
       if (job.kind !== 'recluster') {
         try {
-          const typed = await typeGraphFile(subject.path, graphAsk(cfg, signal), log);
-          assessed = typed.graph;
-          log(
-            `typed ${typed.nodes} nodes, ${typed.edges} edges (graph model ${cfg.chatModel || 'default'})`,
-          );
+          // classifyGraph logs its own coverage; a zero/partial result leaves the gate to fail
+          assessed = (await typeGraphFile(subject.path, graphAsk(cfg, signal), log)).graph;
         } catch (e) {
           log(`typing failed: ${e instanceof Error ? e.message : String(e)}`);
         }

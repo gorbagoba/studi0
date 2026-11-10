@@ -26,6 +26,7 @@ const INSPECT_RULE =
 describe('verification prompt keeps the accuracy rules', () => {
   it('carries the fixed ontology and the no-typing rule', () => {
     expect(VERIFICATION_PROMPT).toContain(ONTOLOGY_HEADER);
+    expect(VERIFICATION_PROMPT).toContain('related_to');
     expect(VERIFICATION_PROMPT).toContain('Put the ontology type in `entity_type`');
     expect(VERIFICATION_PROMPT).toContain(SERVER_TYPES_RULE);
   });

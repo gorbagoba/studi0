@@ -1,7 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { isInside, safeResolve } from '../fs/paths.js';
 import { safeWriteFile } from '../fs/safeWrite.js';
-import { extractJson } from '../pipeline/parse.js';
 import { chatCompletion } from '../teacher/llm.js';
 import {
   edgeKey,
@@ -22,9 +21,39 @@ import {
 import type { Config } from '../config.js';
 
 /** One model call per slice: large enough to amortise, small enough to stay fast and parsable. */
-const BATCH_SIZE = 40;
-const MAX_TEXT = 400;
+const BATCH_SIZE = 60;
+/** Catalogue descriptions are cut here — enough to classify, short enough to keep the prompt tight. */
+const MAX_TEXT = 120;
 const GRAPH_REL = 'graphify-out/graph.json';
+
+const TYPE_BY_LOWER = new Map(ENTITY_TYPES.map((t) => [t.toLowerCase(), t as string]));
+const RELATION_BY_LOWER = new Map(RELATIONS.map((r) => [r.toLowerCase(), r as string]));
+
+/**
+ * keyword → fixed relation, checked in order (first match wins). graphify emits
+ * 120+ free-form verbs, so every one of them must land in the ontology.
+ */
+const RELATION_KEYWORDS: [string, string[]][] = [
+  [
+    'prerequisite_of',
+    ['prerequisite', 'precede', 'depend', 'require', 'assum', 'basis', 'foundation', 'background', 'leads_to', 'enables'],
+  ],
+  ['confused_with', ['confus', 'contrast', 'distinguish', 'alternative', 'similar', 'synonym', 'compar', 'versus']],
+  ['contradicts', ['contradict', 'violat', 'reject', 'conflict', 'oppos', 'does_not_imply', 'warns']],
+  [
+    'uses',
+    ['use', 'appl', 'implement', 'comput', 'calcul', 'model', 'estimat', 'deriv', 'generat', 'produce', 'solv', 'illustrat', 'exemplif', 'demonstrat', 'measur', 'evaluat', 'verif', 'test', 'check', 'construct', 'find'],
+  ],
+];
+
+/** Map any relation verb to the fixed ontology; the generic fallback is `related_to`. */
+export function mapRelation(raw: string): string {
+  const text = raw.trim().toLowerCase().replace(/[\s-]+/g, '_');
+  for (const [relation, keywords] of RELATION_KEYWORDS) {
+    if (keywords.some((keyword) => text.includes(keyword))) return relation;
+  }
+  return 'related_to';
+}
 
 export type GraphAsk = (prompt: string) => Promise<string>;
 
@@ -53,52 +82,97 @@ function brief(node: Rec): string {
 }
 
 function buildPrompt(nodes: Rec[], edges: Rec[], labelOf: Map<string, string>): string {
-  const lines = [
+  const label = (id: string) => labelOf.get(id) ?? id;
+  return [
     'Assign the fixed studi0 ontology to this slice of a study graph.',
-    `Nodes: entity_type from ${ENTITY_TYPES.join(' | ')}.`,
-    `Edges: relation from ${RELATIONS.join(' | ')}.`,
-    'Answer STRICT JSON only (no prose, no code fences):',
-    '{"nodes":[{"id":"<id>","entity_type":"Concept"}],"edges":[{"source":"<id>","target":"<id>","relation":"uses"}]}',
+    `Node types: ${ENTITY_TYPES.join(' | ')}.`,
+    `Edge relations: ${RELATIONS.join(' | ')}.`,
+    'Reply with one line per item and nothing else — no prose, no JSON, no code fences:',
+    'N <nodeId> <Type>',
+    'E <sourceId> <targetId> <relation>',
     'Nodes (id | label | description):',
     ...nodes.map((n) => `- ${nodeId(n)} | ${clip(nodeLabel(n))} | ${brief(n)}`),
-    'Edges (sourceLabel -> targetLabel, current relation):',
-    ...edges.map((e) => {
-      const source = labelOf.get(endpoint(e.source)) ?? endpoint(e.source);
-      const target = labelOf.get(endpoint(e.target)) ?? endpoint(e.target);
-      return `- ${source} -> ${target}, ${edgeRelation(e)}`;
-    }),
-  ];
-  return lines.join('\n');
+    'Edges (sourceId (label) -> targetId (label), current relation):',
+    ...edges.map(
+      (e) =>
+        `- ${endpoint(e.source)} (${label(endpoint(e.source))}) -> ${endpoint(e.target)} (${label(endpoint(e.target))}), ${edgeRelation(e)}`,
+    ),
+  ].join('\n');
 }
 
-/** Strict-parse one answer; anything else is dropped, never thrown. */
+/**
+ * Parse the line grammar `N <id> <type>` / `E <source> <target> <relation>`.
+ * Anything else is dropped, never thrown; type/relation words are case-insensitive.
+ */
 export function parseTypingAnswer(text: string): TypingResult {
-  const parsed = rec(extractJson(text));
   const out: TypingResult = { nodes: [], edges: [] };
-  if (!parsed) return out;
-  for (const raw of list(parsed.nodes)) {
-    const n = rec(raw);
-    if (n && typeof n.id === 'string' && typeof n.entity_type === 'string') {
-      out.nodes.push({ id: n.id, entity_type: n.entity_type });
-    }
-  }
-  for (const raw of list(parsed.edges)) {
-    const e = rec(raw);
-    if (
-      e &&
-      typeof e.source === 'string' &&
-      typeof e.target === 'string' &&
-      typeof e.relation === 'string'
-    ) {
-      out.edges.push({ source: e.source, target: e.target, relation: e.relation });
+  for (const line of text.split('\n')) {
+    const [tag, ...fields] = line.trim().split(/\s+/);
+    if (tag === 'N' && fields.length === 2) {
+      const entity_type = TYPE_BY_LOWER.get(fields[1].toLowerCase());
+      if (entity_type) out.nodes.push({ id: fields[0], entity_type });
+    } else if (tag === 'E' && fields.length === 3) {
+      const relation = RELATION_BY_LOWER.get(fields[2].toLowerCase());
+      if (relation) out.edges.push({ source: fields[0], target: fields[1], relation });
     }
   }
   return out;
 }
 
+interface Batch {
+  nodes: Rec[];
+  edges: Rec[];
+}
+
+function chunks<T>(items: T[]): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += BATCH_SIZE) out.push(items.slice(i, i + BATCH_SIZE));
+  return out;
+}
+
+/** Edges are only asked about when both endpoints are in the same node batch — the model needs their catalogue. */
+function inBatch(nodes: Rec[], edges: Rec[]): Rec[] {
+  const ids = new Set(nodes.map(nodeId));
+  return edges.filter((e) => ids.has(endpoint(e.source)) && ids.has(endpoint(e.target)));
+}
+
+function endpointKey(edge: { source?: unknown; target?: unknown }): string {
+  return `${endpoint(edge.source)}\0${endpoint(edge.target)}`;
+}
+
+/** Nodes that still lack an ontology type after the answers so far. */
+function untypedNodes(graphJson: unknown, result: TypingResult): Rec[] {
+  const answered = new Set(result.nodes.map((n) => n.id));
+  return nodeList(graphJson).filter((node) => {
+    const type = node.entity_type;
+    const typed = typeof type === 'string' && knownType(type.trim());
+    return Boolean(nodeId(node)) && !typed && !answered.has(nodeId(node));
+  });
+}
+
+/** One sweep of batches; a failed batch is logged and skipped, never thrown. */
+async function sweep(
+  batches: Batch[],
+  labelOf: Map<string, string>,
+  ask: GraphAsk,
+  log: (message: string) => void,
+  result: TypingResult,
+): Promise<void> {
+  for (const [index, batch] of batches.entries()) {
+    try {
+      const answer = parseTypingAnswer(await ask(buildPrompt(batch.nodes, batch.edges, labelOf)));
+      result.nodes.push(...answer.nodes);
+      result.edges.push(...answer.edges);
+    } catch (e) {
+      log(`typing batch ${index + 1} failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+}
+
 /**
- * Ask the model for entity types and relations, one batch at a time. A failed
- * batch is logged and skipped — the ontology gate then reports what is missing.
+ * Ask the model for entity types and relations: one sweep in batches of 60, then
+ * one retry sweep over whatever is still untyped. A failed batch is logged and
+ * skipped — the ontology gate then reports what is missing.
  */
 export async function classifyGraph(
   graphJson: unknown,
@@ -109,24 +183,37 @@ export async function classifyGraph(
   const edges = edgeList(graphJson);
   const labelOf = new Map(nodes.map((n) => [nodeId(n), nodeLabel(n) || nodeId(n)]));
   const result: TypingResult = { nodes: [], edges: [] };
-  for (let i = 0; i < nodes.length; i += BATCH_SIZE) {
-    const batch = nodes.slice(i, i + BATCH_SIZE);
-    const ids = new Set(batch.map(nodeId));
-    const batchEdges = edges.filter(
-      (e) => ids.has(endpoint(e.source)) && ids.has(endpoint(e.target)),
+  await sweep(
+    chunks(nodes).map((batch) => ({ nodes: batch, edges: inBatch(batch, edges) })),
+    labelOf,
+    ask,
+    log,
+    result,
+  );
+
+  const leftNodes = untypedNodes(graphJson, result);
+  if (leftNodes.length > 0) {
+    // pass 2 covers leftover nodes only: relations are mapped deterministically in applyTyping
+    await sweep(
+      chunks(leftNodes).map((batch) => ({ nodes: batch, edges: [] })),
+      labelOf,
+      ask,
+      log,
+      result,
     );
-    try {
-      const answer = parseTypingAnswer(await ask(buildPrompt(batch, batchEdges, labelOf)));
-      result.nodes.push(...answer.nodes);
-      result.edges.push(...answer.edges);
-    } catch (e) {
-      log(`typing batch ${i / BATCH_SIZE + 1} failed: ${e instanceof Error ? e.message : String(e)}`);
-    }
   }
+  log(
+    `typed ${nodes.length - untypedNodes(graphJson, result).length}/${nodes.length} nodes, ` +
+      `${edges.length}/${edges.length} edges`,
+  );
   return result;
 }
 
-/** Apply the accepted guesses to a copy of the graph; nodes keep `file_type`, edges keep everything else. */
+/**
+ * Apply the accepted guesses to a copy of the graph: nodes keep `file_type`, and
+ * every edge gets a known relation — the model answer when it is valid, else the
+ * deterministic `mapRelation` of the original verb.
+ */
 export function applyTyping(graphJson: unknown, result: TypingResult): TypingOutcome {
   const graph = rec(graphJson) ?? {};
   const typeById = new Map(
@@ -135,7 +222,7 @@ export function applyTyping(graphJson: unknown, result: TypingResult): TypingOut
   const relationByEdge = new Map(
     result.edges
       .filter((e) => knownRelation(e.relation))
-      .map((e) => [`${e.source}\0${e.target}`, e.relation]),
+      .map((e) => [endpointKey(e), e.relation]),
   );
   let nodes = 0;
   const typedNodes = nodeList(graph).map((node) => {
@@ -150,8 +237,7 @@ export function applyTyping(graphJson: unknown, result: TypingResult): TypingOut
   if (key) {
     out[key] = list(graph[key]).map((raw) => {
       const edge = rec(raw) ?? {};
-      const relation = relationByEdge.get(`${endpoint(edge.source)}\0${endpoint(edge.target)}`);
-      if (!relation) return edge;
+      const relation = relationByEdge.get(endpointKey(edge)) ?? mapRelation(edgeRelation(edge));
       edges++;
       return { ...edge, relation };
     });
@@ -192,15 +278,18 @@ interface ChatReply {
   choices?: { message?: { content?: string } }[];
 }
 
-/** Production ask: chatCompletion with the graph-model config, thinking off via the config default. */
+/** Production ask: the graph model (fast, non-thinking, line-disciplined), via the chat gateway. */
 export function graphAsk(cfg: Config, signal: AbortSignal): GraphAsk {
   return async (prompt) => {
     const reply = (await chatCompletion(
       cfg,
       {
-        model: cfg.chatModel,
+        model: cfg.graphModel,
         messages: [
-          { role: 'system', content: 'You assign ontology types. Reply with strict JSON only.' },
+          {
+            role: 'system',
+            content: 'You assign ontology types and relations. Reply with one line per item, nothing else.',
+          },
           { role: 'user', content: prompt },
         ],
       },

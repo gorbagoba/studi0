@@ -54,7 +54,7 @@ The course's notation, definitions, and conventions override your general knowle
 
 ## Ontology
 
-When discussing the knowledge graph, only these types exist. Entities: Concept, Algorithm, DataStructure, Proof, Pitfall, ExamNote. Relations: prerequisite_of, uses, confused_with, contradicts.
+When discussing the knowledge graph, only these types exist. Entities: Concept, Algorithm, DataStructure, Proof, Pitfall, ExamNote. Relations: prerequisite_of, uses, confused_with, contradicts, related_to.
 
 ## Lessons
 

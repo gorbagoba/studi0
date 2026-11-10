@@ -1,8 +1,14 @@
 /** The fixed studi0 ontology. Extraction must set these; graphify's defaults are a build failure. */
 export const ENTITY_TYPES = ['Concept', 'Algorithm', 'DataStructure', 'Proof', 'Pitfall', 'ExamNote'] as const;
-export const RELATIONS = ['prerequisite_of', 'uses', 'confused_with', 'contradicts'] as const;
+export const RELATIONS = [
+  'prerequisite_of',
+  'uses',
+  'confused_with',
+  'contradicts',
+  'related_to',
+] as const;
 /** graphify's built-in enums — seeing any of these means the ontology never reached extraction. */
-export const DEFAULT_RELATIONS = ['cites', 'references', 'conceptually_related_to', 'related_to'];
+export const DEFAULT_RELATIONS = ['cites', 'references', 'conceptually_related_to'];
 
 export type Rec = Record<string, unknown>;
 

@@ -42,7 +42,7 @@ All subjects live at `<repo>/data/subjects/<name>` — derive absolute paths fro
 ## Fixed ontology (verification)
 Put the ontology type in `entity_type`. Never use `file_type` for it (graphify rewrites it to a built-in enum).
 - Entity types: Concept, Algorithm, DataStructure, Proof, Pitfall, ExamNote
-- Relation types: prerequisite_of, uses, confused_with, contradicts
+- Relation types: prerequisite_of, uses, confused_with, contradicts, related_to
 Do NOT assign, repair or verify entity types or relations yourself. graphify's extractor emits its own defaults; the SERVER re-types the graph (entity_type + relation) after extraction and validates it. Verify edges against the material; flagged edges must never be presented as fact downstream.
 
 ## Shell (Windows PowerShell 5.1)
