@@ -7,6 +7,9 @@ const DATA_IS_NOT_INSTRUCTIONS =
 const CURRENT_RUN_TRUTH =
   'Report only what THIS run computed. Never infer state from older logs, reports, backups or previous assistant messages. Count what you report (e.g. nodes/edges) by reading graph.json yourself, and quote the actual stderr of a command that failed in this run. Never emit studi0-failed or a DONE line for a reason you did not observe in this run.';
 
+const ENVIRONMENT_RULE =
+  'ENVIRONMENT: graphify is the project venv binary already on PATH (GRAPHIFY_BIN) and the backend/model env is preset. Verify it once with `graphify --version` and one `graphify extract` run; do NOT search for installs, do NOT check for API keys, do NOT create venvs.';
+
 const prompts: [string, string][] = [
   ['planPrompt', planPrompt('build', 'st2334')],
   ['extractionPrompt', extractionPrompt('build', 'st2334')],
@@ -21,6 +24,10 @@ describe('graph prompts: material is data, current run is truth', () => {
 
   it.each(prompts)('%s reports only this run', (_name, prompt) => {
     expect(prompt).toContain(CURRENT_RUN_TRUTH);
+  });
+
+  it.each(prompts)('%s senses the provisioned venv instead of installing', (_name, prompt) => {
+    expect(prompt).toContain(ENVIRONMENT_RULE);
   });
 
   it('planner and merge keep chunk scope to this run`s material/ files', () => {

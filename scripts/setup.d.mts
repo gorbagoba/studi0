@@ -2,6 +2,7 @@
 export const PORT_KEYS: Record<string, string>;
 export const PORT_DEFAULTS: Record<string, number>;
 export const PIP_PINS: { pkg: string; spec: string; want: (v: string) => boolean }[];
+export const graphifyInstallSpecs: string[];
 export const SKILL_AGENT_BY_CLI: Record<string, string>;
 export const GRAPH_DEFAULT_MODEL: string;
 export function maskSecret(s?: string | null): string;
@@ -22,6 +23,21 @@ export function findOpencodeExeCandidates(
 ): string[];
 export function walkForExe(dir: string, opts?: { maxDepth?: number; maxVisited?: number; maxHits?: number }): string[];
 export function uvInstallArgs(pythonBin: string, specs: string[]): string[];
+export function graphifyVenvPaths(
+  repoRoot: string,
+  platform?: string,
+): { dir: string; python: string; bin: string };
+export function graphifyVenvPlan(opts: {
+  paths: { dir: string; python: string; bin: string };
+  python: string;
+  pythonPrefix?: string[];
+  venvExists: boolean;
+  installed?: { graphifyy?: string | null; openai?: string | null; pypdf?: string | null };
+  tool?: 'pip' | 'uv';
+}): {
+  commands: { bin: string; argv: string[] }[];
+  env: { STUDI0_GRAPHIFY_VENV: string; GRAPHIFY_BIN: string };
+};
 export function portBusy(port: number): Promise<boolean>;
 export function pickFreePort(
   start: number,

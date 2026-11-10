@@ -33,6 +33,9 @@ export const PIP_PINS = [
   },
 ];
 
+/** Specs the dedicated graphify venv must hold (same pins as the global fallback). */
+export const graphifyInstallSpecs = PIP_PINS.map((p) => p.spec);
+
 // optional skills install (opt-in): graphify skill for YOUR harness.
 // sources may drift — registry name is the fallback; failure is a warning, never fatal.
 const SKILL_NAME = 'graphify';
@@ -119,6 +122,38 @@ export function walkForExe(dir, { maxDepth = 8, maxVisited = 8000, maxHits = 3 }
     interpreter the server uses (imports + the `graphify` entry point must land there). */
 export function uvInstallArgs(pythonBin, specs) {
   return ['pip', 'install', '--python', pythonBin, ...specs];
+}
+
+/** Dedicated graphify venv layout for a repo root + node platform (win32 | posix). */
+export function graphifyVenvPaths(repoRoot, platform = process.platform) {
+  const win = platform === 'win32';
+  const p = win ? path.win32 : path.posix;
+  const dir = p.join(repoRoot, '.graphify-venv');
+  const bindir = p.join(dir, win ? 'Scripts' : 'bin');
+  return {
+    dir,
+    python: p.join(bindir, win ? 'python.exe' : 'python'),
+    bin: p.join(bindir, win ? 'graphify.exe' : 'graphify'),
+  };
+}
+
+/**
+ * Pure: commands setup must run against the venv. `installed` = { graphifyy,
+ * openai, pypdf } versions probed from the venv (null = missing). No commands =
+ * ready. `env` is the .env pair the server reads.
+ */
+export function graphifyVenvPlan({ paths, python, pythonPrefix = [], venvExists, installed = {}, tool = 'pip' }) {
+  const ready = installed.graphifyy === '0.9.95' && Boolean(installed.openai) && Boolean(installed.pypdf);
+  const commands = [];
+  if (!venvExists) commands.push({ bin: python, argv: [...pythonPrefix, '-m', 'venv', paths.dir] });
+  if (!ready) {
+    commands.push(
+      tool === 'uv'
+        ? { bin: 'uv', argv: uvInstallArgs(paths.python, graphifyInstallSpecs) }
+        : { bin: paths.python, argv: ['-m', 'pip', 'install', '--quiet', ...graphifyInstallSpecs] },
+    );
+  }
+  return { commands, env: { STUDI0_GRAPHIFY_VENV: paths.dir, GRAPHIFY_BIN: paths.bin } };
 }
 
 function run(bin, argv, opts = {}) {
@@ -337,6 +372,53 @@ function installPipPkgs(py, tool) {
       ? `✔ ${tool}: installed ${specs.join(', ')}`
       : `✗ ${tool}: install failed — ${r.err.split(/\r?\n/).slice(-2).join(' | ')}`,
   ];
+}
+
+/** Versions of the venv's pinned deps (null = missing, incl. no venv). */
+function graphifyVenvInstalled(venv) {
+  if (!existsSync(venv.python)) return {};
+  const asPy = { bin: venv.python, prefix: [] };
+  return Object.fromEntries(['graphifyy', 'openai', 'pypdf'].map((pkg) => [pkg, pipVersion(asPy, pkg)]));
+}
+
+/** Scan row: dedicated venv presence, its python version, its graphifyy version. */
+function checkGraphifyVenv(venv) {
+  if (!existsSync(venv.python)) return { ok: false, label: `missing — setup creates ${venv.dir}` };
+  const v = run(venv.python, ['--version']);
+  const pyv = (v.out || v.err).match(/Python (\d+\.\d+\.\d+)/)?.[1];
+  const gv = pipVersion({ bin: venv.python, prefix: [] }, 'graphifyy');
+  return { ok: Boolean(gv), label: `python ${pyv ?? '?'} · graphifyy ${gv ?? 'missing'}` };
+}
+
+/** Create the dedicated venv if missing, then install/refresh the two pins inside it. */
+function installGraphifyVenv(venv, py, tool) {
+  const plan = graphifyVenvPlan({
+    paths: venv,
+    python: py.bin,
+    pythonPrefix: py.prefix,
+    venvExists: existsSync(venv.python),
+    installed: graphifyVenvInstalled(venv),
+    tool,
+  });
+  for (const { bin, argv } of plan.commands) {
+    process.stdout.write(`+ ${bin} ${argv.join(' ')}\n`);
+    const r = run(bin, argv, { timeout: 0 });
+    if (!r.ok) {
+      return {
+        ok: false,
+        notes: [`✗ graphify venv: \`${bin} ${argv.join(' ')}\` failed — ${r.err.split(/\r?\n/).slice(-2).join(' | ')}`],
+      };
+    }
+  }
+  return {
+    ok: true,
+    env: plan.env,
+    notes: [
+      plan.commands.length === 0
+        ? `✔ graphify venv: ${venv.dir} already has graphifyy 0.9.95`
+        : `✔ graphify venv: ${venv.dir} (${tool})`,
+    ],
+  };
 }
 
 /** `--version` probe → installed; optional cheap auth probe → logged in / not. */
@@ -611,6 +693,8 @@ async function main() {
   rows.push(['pnpm', pnpm]);
   const py = checkPython();
   rows.push(['python', py]);
+  const venv = graphifyVenvPaths(repoRoot, process.platform);
+  rows.push(['graphify venv', checkGraphifyVenv(venv)]);
   const oc = checkCli('opencode', { argv: ['auth', 'list'], hint: 'opencode auth login' });
   rows.push(['opencode', oc]);
   const claude = checkCli('claude');
@@ -630,11 +714,23 @@ async function main() {
   const graphChanges = await chooseGraphLlm(envFile, notes);
 
   // ── apply phase ──
-  if (pyTool) notes.push(...installPipPkgs(py, pyTool));
+  let venvEnv = {};
+  if (py.ok) {
+    const res = installGraphifyVenv(venv, py, pyTool ?? 'pip'); // no ask happened → pip
+    notes.push(...res.notes);
+    venvEnv = res.env ?? {};
+    if (!existsSync(venv.python)) {
+      // venv creation failed → the old global install is the fallback (never blocks setup)
+      notes.push('graphify venv: unavailable — falling back to the global python install');
+      if (pyTool) notes.push(...installPipPkgs(py, pyTool));
+    }
+  } else {
+    notes.push('✗ graphify venv: python missing — skipped (server falls back to PATH)');
+  }
   notes.push(...(await maybeFixOpencodeBin(ocBin)));
   notes.push(await maybeInstallGraphifySkill(harness));
 
-  const envChanges = { STUDI0_HARNESS: harness, ...graphChanges };
+  const envChanges = { STUDI0_HARNESS: harness, ...graphChanges, ...venvEnv };
   const envPath = path.join(repoRoot, '.env');
   const { picks, changes: portChanges, notes: portNotes } = await pickPorts();
   notes.push(...portNotes);
@@ -660,7 +756,7 @@ async function main() {
 
   console.log('\nstudi0 setup');
   console.log('────────────');
-  for (const [name, r] of rows) console.log(`${r.ok ? '✔' : '✗'} ${name.padEnd(9)} ${r.label}`);
+  for (const [name, r] of rows) console.log(`${r.ok ? '✔' : '✗'} ${name.padEnd(13)} ${r.label}`);
   console.log('');
   for (const { svc, configured, free, ours } of picks) {
     const busy = String(free) !== String(configured);

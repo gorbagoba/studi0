@@ -8,6 +8,8 @@ import type { TestHarness } from './helpers';
 
 // route every spawnArgs call at node itself: a real child without needing opencode
 process.env.OPENCODE_BIN = process.execPath;
+// preflight probes GRAPHIFY_BIN for real — node itself answers --version
+process.env.GRAPHIFY_BIN = process.execPath;
 
 // the wave size the harness app actually uses (cfg.maxChunkConcurrency)
 const WAVE = makeConfig().maxChunkConcurrency;

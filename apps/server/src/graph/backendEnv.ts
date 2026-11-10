@@ -1,3 +1,4 @@
+import path from 'node:path';
 import type { Config } from '../config.js';
 
 /**
@@ -6,7 +7,13 @@ import type { Config } from '../config.js';
  * (graphify treats an empty key as absent — llm.py `_get_backend_api_key`.)
  */
 export function graphEnv(cfg: Config): Record<string, string> {
+  const venvBinDir = path.resolve(cfg.graphifyVenv, process.platform === 'win32' ? 'Scripts' : 'bin');
   const env: Record<string, string> = {
+    // the agent runs bare `graphify` — the project venv must win PATH lookup
+    PATH: [venvBinDir, process.env.PATH ?? ''].filter(Boolean).join(path.delimiter),
+    GRAPHIFY_BIN: cfg.graphifyBin,
+    VIRTUAL_ENV: cfg.graphifyVenv,
+    PYTHONNOUSERSITE: '1',
     GRAPHIFY_BACKEND: cfg.graphBackend,
     MOONSHOT_API_KEY: '',
     DEEPSEEK_API_KEY: '',

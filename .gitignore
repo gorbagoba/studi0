@@ -4,6 +4,7 @@ coverage/
 *.db
 data/
 graphify-out/
+.graphify-venv/
 .env
 qa-tmp/
 data-*/

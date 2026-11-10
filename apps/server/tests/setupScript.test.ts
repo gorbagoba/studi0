@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { GRAPH_DEFAULT_MODEL, autoGraphChanges, graphEnvChanges, maskSecret } from '../../../scripts/setup.mjs';
+import {
+  GRAPH_DEFAULT_MODEL,
+  autoGraphChanges,
+  graphEnvChanges,
+  graphifyInstallSpecs,
+  graphifyVenvPaths,
+  graphifyVenvPlan,
+  maskSecret,
+} from '../../../scripts/setup.mjs';
 
 const CHAT = { CHAT_BASE_URL: 'http://gw.local/v1', CHAT_API_KEY: 'chat-secret-key' };
 
@@ -75,5 +83,60 @@ describe('graph LLM setup helpers', () => {
 
   it('--yes: no saved keys and no gateway → AST-only', () => {
     expect(autoGraphChanges({})).toEqual({ STUDI0_GRAPH_BACKEND: 'none' });
+  });
+});
+
+describe('graphify venv setup', () => {
+  const WIN = graphifyVenvPaths('C:\\repo', 'win32');
+  const POSIX = graphifyVenvPaths('/repo', 'posix');
+
+  it('maps the venv layout per platform', () => {
+    expect(WIN).toEqual({
+      dir: 'C:\\repo\\.graphify-venv',
+      python: 'C:\\repo\\.graphify-venv\\Scripts\\python.exe',
+      bin: 'C:\\repo\\.graphify-venv\\Scripts\\graphify.exe',
+    });
+    expect(POSIX).toEqual({
+      dir: '/repo/.graphify-venv',
+      python: '/repo/.graphify-venv/bin/python',
+      bin: '/repo/.graphify-venv/bin/graphify',
+    });
+  });
+
+  it('pins graphifyy with the openai extra + pypdf', () => {
+    expect(graphifyInstallSpecs).toContain('graphifyy[openai]==0.9.95');
+    expect(graphifyInstallSpecs).toContain('pypdf>=6,<7');
+  });
+
+  it('plans venv creation + install when the venv is missing', () => {
+    const plan = graphifyVenvPlan({ paths: POSIX, python: 'python3', venvExists: false });
+    expect(plan.commands).toEqual([
+      { bin: 'python3', argv: ['-m', 'venv', POSIX.dir] },
+      { bin: POSIX.python, argv: ['-m', 'pip', 'install', '--quiet', ...graphifyInstallSpecs] },
+    ]);
+    expect(plan.env).toEqual({ STUDI0_GRAPHIFY_VENV: POSIX.dir, GRAPHIFY_BIN: POSIX.bin });
+  });
+
+  it('plans nothing when graphifyy + openai + pypdf are already in the venv', () => {
+    const plan = graphifyVenvPlan({
+      paths: WIN,
+      python: 'python',
+      venvExists: true,
+      installed: { graphifyy: '0.9.95', openai: '1.0.0', pypdf: '6.1.1' },
+    });
+    expect(plan.commands).toEqual([]);
+  });
+
+  it('reuses uv against the venv interpreter when the pin is stale', () => {
+    const plan = graphifyVenvPlan({
+      paths: POSIX,
+      python: 'python3',
+      venvExists: true,
+      installed: { graphifyy: '0.9.90', openai: '1.0.0', pypdf: '6.1.1' },
+      tool: 'uv',
+    });
+    expect(plan.commands).toEqual([
+      { bin: 'uv', argv: ['pip', 'install', '--python', POSIX.python, ...graphifyInstallSpecs] },
+    ]);
   });
 });

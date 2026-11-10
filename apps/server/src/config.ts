@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 export interface Config {
@@ -49,6 +49,10 @@ export interface Config {
   graphApiKey: string;
   /** model graphify itself uses (GRAPHIFY_OPENAI_MODEL) */
   graphModel: string;
+  /** project-local graphify virtualenv (STUDI0_GRAPHIFY_VENV) */
+  graphifyVenv: string;
+  /** graphify executable (GRAPHIFY_BIN) — derived from graphifyVenv when present, else bare graphify */
+  graphifyBin: string;
 }
 
 /** Lesson-writer template kwargs from JSON env; malformed input falls back (one warn). */
@@ -102,6 +106,8 @@ try {
       'STUDI0_GRAPH_BASE_URL',
       'STUDI0_GRAPH_API_KEY',
       'STUDI0_GRAPH_MODEL',
+      'STUDI0_GRAPHIFY_VENV',
+      'GRAPHIFY_BIN',
       'ANTHROPIC_API_KEY',
       'GEMINI_API_KEY',
       'GOOGLE_API_KEY',
@@ -146,6 +152,14 @@ export function makeConfig(dataDir?: string): Config {
     console.warn(`[config] graph backend ${graphBackend} has no complete credentials; using none (AST-only)`);
     graphBackend = 'none';
   }
+  const graphifyVenv = process.env.STUDI0_GRAPHIFY_VENV ?? resolve(repoRoot, '.graphify-venv');
+  // venv layout differs by platform; the derived bin is only trusted when it exists
+  const venvBin = resolve(
+    graphifyVenv,
+    process.platform === 'win32' ? 'Scripts' : 'bin',
+    process.platform === 'win32' ? 'graphify.exe' : 'graphify',
+  );
+  const graphifyBin = process.env.GRAPHIFY_BIN ?? (existsSync(venvBin) ? venvBin : 'graphify');
   return {
     port: Number(process.env.PORT ?? 3001),
     host: '127.0.0.1',
@@ -190,5 +204,7 @@ export function makeConfig(dataDir?: string): Config {
     graphBaseUrl,
     graphApiKey,
     graphModel,
+    graphifyVenv,
+    graphifyBin,
   };
 }

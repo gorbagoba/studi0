@@ -13,6 +13,7 @@ import {
 import { safeResolve } from '../fs/paths.js';
 import { safeWriteFile } from '../fs/safeWrite.js';
 import { graphEnv } from '../graph/backendEnv.js';
+import { checkGraphify } from '../graph/preflight.js';
 import * as jobsRepo from '../db/repos/jobs.js';
 import type { Db } from '../db/index.js';
 import type { EventBus } from '../http/sse.js';
@@ -70,6 +71,14 @@ export const makeRunPipeline =
         at: new Date().toISOString(),
       });
     };
+
+    // fail fast on a broken venv — an agent cannot install it and must not try
+    const preflight = await checkGraphify(cfg.graphifyBin);
+    if (!preflight.ok) {
+      log(preflight.error);
+      return { status: 'failed', partial: null, error: preflight.error };
+    }
+    log(`graphify ${preflight.version} (backend ${cfg.graphBackend}, model ${cfg.graphModel || 'default'})`);
 
     let aborted = false;
     const liveKills = new Set<() => void>();

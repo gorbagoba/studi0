@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 // stub spawn: the whole point is reading the args each stage spawns with
+// preflight probes GRAPHIFY_BIN for real — node itself answers --version
+process.env.GRAPHIFY_BIN = process.execPath;
 const mocks = vi.hoisted(() => ({ spawnArgs: vi.fn() }));
 vi.mock('../src/util/proc.js', () => ({
   spawnArgs: mocks.spawnArgs,

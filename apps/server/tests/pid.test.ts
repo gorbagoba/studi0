@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 // stub spawn/kill: pid bookkeeping must not need a real opencode
+// preflight probes GRAPHIFY_BIN for real — node itself answers --version
+process.env.GRAPHIFY_BIN = process.execPath;
 const mocks = vi.hoisted(() => ({
   spawnArgs: vi.fn(),
   killTreeWithDeadline: vi.fn(),

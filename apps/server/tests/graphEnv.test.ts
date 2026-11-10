@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import path from 'node:path';
 import { graphEnv } from '../src/graph/backendEnv.js';
 import { makeConfig } from '../src/config.js';
 
@@ -118,6 +119,21 @@ describe('graphEnv', () => {
     expect(env.OPENAI_API_KEY).toBe('');
     expect(env).not.toHaveProperty('OPENAI_BASE_URL');
     expect(env).not.toHaveProperty('GRAPHIFY_OPENAI_MODEL');
+  });
+
+  it('puts the venv scripts dir first on PATH and exports the venv env', () => {
+    const venv = path.resolve('/tmp/studi0-venv');
+    const cfg = {
+      ...makeConfig('/tmp/studi0-graphenv'),
+      graphifyVenv: venv,
+      graphifyBin: path.join(venv, 'Scripts', 'graphify.exe'),
+    };
+    const env = graphEnv(cfg);
+    const scriptsDir = path.join(venv, process.platform === 'win32' ? 'Scripts' : 'bin');
+    expect(env.PATH.split(path.delimiter)[0]).toBe(scriptsDir);
+    expect(env.GRAPHIFY_BIN).toBe(cfg.graphifyBin);
+    expect(env.VIRTUAL_ENV).toBe(venv);
+    expect(env.PYTHONNOUSERSITE).toBe('1');
   });
 
   it('incomplete gateway config warns once and falls back to none', () => {
