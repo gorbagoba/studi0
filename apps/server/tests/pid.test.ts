@@ -6,6 +6,8 @@ import path from 'node:path';
 // stub spawn/kill: pid bookkeeping must not need a real opencode
 // preflight probes GRAPHIFY_BIN for real — node itself answers --version
 process.env.GRAPHIFY_BIN = process.execPath;
+// blank the gateway: the typing pass must not reach a real model
+process.env.CHAT_BASE_URL = '';
 const mocks = vi.hoisted(() => ({
   spawnArgs: vi.fn(),
   killTreeWithDeadline: vi.fn(),
@@ -43,7 +45,13 @@ describe('job pid bookkeeping', () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'studi0-pid-'));
     made.push(dir);
     await (await import('node:fs/promises')).mkdir(path.join(dir, 'graphify-out'), { recursive: true });
-    await (await import('node:fs/promises')).writeFile(path.join(dir, 'graphify-out', 'graph.json'), '{}');
+    await (await import('node:fs/promises')).writeFile(path.join(dir, 'graphify-out', 'graph.json'), JSON.stringify({
+      nodes: [
+        { id: 'a', label: 'Gradient descent', entity_type: 'Algorithm' },
+        { id: 'b', label: 'Loss function', entity_type: 'Concept' },
+      ],
+      links: [{ source: 'a', target: 'b', relation: 'uses' }],
+    }));
     const db = openDb(path.join(dir, 'studi0.db'));
     insertSubject(db, { id: 'subject-1', name: 'S', path: dir, created_at: new Date().toISOString() });
     const job = jobsRepo.insertJob(db, 'job-1', 'subject-1', 'build');

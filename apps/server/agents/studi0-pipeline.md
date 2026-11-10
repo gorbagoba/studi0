@@ -36,11 +36,14 @@ Extraction scope is exactly the material/ files listed for this run — never ad
 graphify is the project venv binary already on PATH (`GRAPHIFY_BIN`); the backend/model env is preset by the server. Verify it once with `graphify --version` and a single `graphify extract` run. Do NOT search for installs, do NOT check for API keys, and do NOT create virtual environments — the server fails the job before this run if the venv is broken.
 
 ## Artifacts live at the subject root
-Run every graphify command from the subject root and always pin the output: `graphify extract material --out graphify-out` (recluster: `graphify cluster graphify-out`). graphify-out/ lives at the SUBJECT ROOT. Never write, move or read graph-related artifacts under material/ — a graphify-out/ inside material/ is a bug: delete it and rerun with --out graphify-out.
+Run every graphify command from the subject root and always pin the output and density: `graphify extract material --out . --token-budget 3000` (recluster: `graphify cluster-only graphify-out`). `--out .` writes `./graphify-out/graph.json` from the subject root; never pass a directory as --out (graphify would nest a second graphify-out — that is how a graph gets lost). `--token-budget` is the density lever: the server passes STUDI0_GRAPH_TOKEN_BUDGET (default 3000) — keep the number the server put in your prompt, never drop or raise it. graphify-out/ lives at the SUBJECT ROOT. Never write, move or read graph-related artifacts under material/ — a graphify-out/ inside material/ is a bug: delete it and rerun with --out .
 
-`graphify cluster-only` (or the label/cluster command you use) reads `<cwd>/graphify-out/graph.json`. Run it from the SUBJECT ROOT with no path arguments. If it reports a missing file or unexpected layout, STOP and report the exact error — never move, delete or restructure graphify-out to satisfy it.
+`graphify cluster-only graphify-out` (or the label/cluster command you use) reads `<cwd>/graphify-out/graph.json`. Run it from the SUBJECT ROOT. If it reports a missing file or unexpected layout, STOP and report the exact error — never move, delete or restructure graphify-out to satisfy it.
 
-Never `cd` into graphify-out. Output MUST be exactly `<subject root>/graphify-out/graph.json`; a `graphify-out/graphify-out/` directory is a bug — move its contents up one level and delete it before reporting.
+Never `cd` into graphify-out. Output MUST be exactly `<subject root>/graphify-out/graph.json`; a `graphify-out/graphify-out/` directory is a bug — stop and report it.
+
+## Hollow responses fail the extraction
+If graphify reports "hollow response" or a chunk failed, retry that chunk ONCE with a smaller file set (extract the files one at a time). Never accept a graph that is just one node per file: if the resulting graph has roughly one node per file and all nodes are documents, the semantic extraction failed — report it as failed, do not call it complete. Never emit DONE when chunk extraction produced fewer than 5 nodes per material file for text-bearing PDFs/markdown.
 
 ## Never delete graph artifacts
 Never delete graphify-out/, graph.json or its backups. The server owns backup and cache clearing. If graph.json is missing, report it and stop — do not clean up or rebuild the directory.

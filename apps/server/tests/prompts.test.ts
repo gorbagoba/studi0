@@ -21,7 +21,10 @@ const SHELL_RULE =
   'SHELL: The shell is Windows PowerShell 5.1. `&&`, `||` and `??` do not work — chain commands with `;`. Run each graphify command as a single line from the SUBJECT ROOT using absolute paths.';
 
 const OUTPUT_LOCATION_RULE =
-  'OUTPUT LOCATION: Never `cd` into graphify-out. Output MUST be exactly `<subject root>/graphify-out/graph.json`; a `graphify-out/graphify-out/` directory is a bug — move its contents up one level and delete it before reporting.';
+  'OUTPUT LOCATION: Run graphify from the SUBJECT ROOT. `--out .` writes `./graphify-out/graph.json`; never pass a directory as --out (graphify would nest a second graphify-out — that is how a graph gets lost). Never `cd` into graphify-out. Output MUST be exactly `<subject root>/graphify-out/graph.json`; a `graphify-out/graphify-out/` directory is a bug — stop and report it.';
+
+const HOLLOW_RESPONSE_RULE =
+  "HOLLOW RESPONSES: If graphify reports 'hollow response' or a chunk failed, retry that chunk ONCE with a smaller file set (extract the files one at a time). Never accept a graph that is just one node per file: if the resulting graph has roughly one node per file and all nodes are documents, the semantic extraction failed — report it as failed, do not call it complete. Never emit DONE when chunk extraction produced fewer than 5 nodes per material file for text-bearing PDFs/markdown.";
 
 const prompts: [string, string][] = [
   ['planPrompt', planPrompt('build', 'st2334')],
@@ -79,13 +82,67 @@ describe('graph prompts: graphify-out stays at the subject root', () => {
     ['chunkWavePrompt rebuild', chunkWavePrompt('graphify-out/chunks/chunk-01.md', 'rebuild')],
   ];
 
-  it.each(graphPrompts)('%s pins graphify output with --out graphify-out', (_name, prompt) => {
-    expect(prompt).toContain('--out graphify-out');
+  it.each(graphPrompts)('%s writes ./graphify-out/graph.json with --out .', (_name, prompt) => {
+    expect(prompt).toContain('--out .');
+    expect(prompt).not.toContain('--out graphify-out');
     expect(prompt).toContain('graphify-out/ lives at the SUBJECT ROOT');
   });
 
   it.each(graphPrompts)('%s never invites graph artifacts under material/', (_name, prompt) => {
     expect(prompt).not.toMatch(/material[\\/]graphify-out/);
+  });
+});
+
+describe('graph prompts: hollow responses and one-node-per-file graphs fail', () => {
+  const graphPrompts: [string, string][] = [
+    ...prompts,
+    ['extractionPrompt update', extractionPrompt('update', 'st2334')],
+    ['extractionPrompt recluster', extractionPrompt('recluster', 'st2334')],
+    ['extractionPrompt rebuild', extractionPrompt('rebuild', 'st2334')],
+    ['planPrompt rebuild', planPrompt('rebuild', 'st2334')],
+    ['chunkWavePrompt rebuild', chunkWavePrompt('graphify-out/chunks/chunk-01.md', 'rebuild')],
+  ];
+
+  it.each(graphPrompts)('%s retries a hollow chunk once with fewer files', (_name, prompt) => {
+    expect(prompt).toContain(HOLLOW_RESPONSE_RULE);
+    expect(prompt).toContain("retry that chunk ONCE with a smaller file set");
+    expect(prompt).toContain('Never emit DONE when chunk extraction produced fewer than 5 nodes per material file');
+  });
+
+  it.each(graphPrompts)('%s refuses a graph that is one node per file', (_name, prompt) => {
+    expect(prompt).toContain('roughly one node per file and all nodes are documents');
+    expect(prompt).toContain('report it as failed, do not call it complete');
+  });
+});
+
+describe('graph prompts: token budget drives extraction density', () => {
+  const extractPrompts: [string, string][] = [
+    ['extractionPrompt build', extractionPrompt('build', 'st2334')],
+    ['extractionPrompt update', extractionPrompt('update', 'st2334')],
+    ['extractionPrompt rebuild', extractionPrompt('rebuild', 'st2334')],
+    ['planPrompt build', planPrompt('build', 'st2334')],
+    ['chunkPromptFile', chunkPromptFile('build', 'st2334', ['material/a.md'])],
+    ['chunkWavePrompt', chunkWavePrompt('graphify-out/chunks/chunk-01.md', 'build')],
+    ['mergePrompt', mergePrompt('st2334')],
+  ];
+
+  it.each(extractPrompts)('%s defaults to --token-budget 3000', (_name, prompt) => {
+    expect(prompt).toContain('--token-budget 3000');
+  });
+
+  it('interpolates a configured budget into every extraction command', () => {
+    expect(extractionPrompt('build', 'st2334', 1200)).toContain('--token-budget 1200');
+    expect(planPrompt('build', 'st2334', 1200)).toContain('--token-budget 1200');
+    expect(chunkPromptFile('build', 'st2334', ['material/a.md'], 1200)).toContain('--token-budget 1200');
+    expect(chunkWavePrompt('graphify-out/chunks/chunk-01.md', 'build', 1200)).toContain(
+      '--token-budget 1200',
+    );
+    expect(mergePrompt('st2334', 1200)).toContain('--token-budget 1200');
+  });
+
+  it('never puts a token budget on the cluster step', () => {
+    expect(extractionPrompt('recluster', 'st2334')).not.toContain('--token-budget');
+    expect(extractionPrompt('recluster', 'st2334')).toContain('graphify cluster-only graphify-out');
   });
 });
 
@@ -107,7 +164,7 @@ describe('graph prompts: rebuild is prepared by the server', () => {
   });
 
   it.each(rebuildPrompts)('%s extracts the full material/ tree, never incremental', (_name, prompt) => {
-    expect(prompt).toContain('graphify extract material --out graphify-out');
+    expect(prompt).toContain('graphify extract material --out .');
     expect(prompt).not.toContain('incremental');
   });
 
@@ -208,7 +265,7 @@ const SERVER_TYPES_RULE =
   "Do NOT assign, repair or verify entity types or relations yourself. graphify's extractor emits its own defaults; the SERVER re-types the graph (entity_type + relation) after your run and validates it. Your job is extraction and clustering only.";
 
 const CLUSTER_RULE =
-  '`graphify cluster-only` (or the label/cluster command you use) reads `<cwd>/graphify-out/graph.json`. Run it from the SUBJECT ROOT with no path arguments. If it reports a missing file or unexpected layout, STOP and report the exact error — never move, delete or restructure graphify-out to satisfy it.';
+  'Re-cluster with `graphify cluster-only graphify-out` from the SUBJECT ROOT (or the label/cluster command you use — it reads `<cwd>/graphify-out/graph.json`). If it reports a missing file or unexpected layout, STOP and report the exact error — never move, delete or restructure graphify-out to satisfy it.';
 
 const EFFICIENCY =
   'Do not generate wiki/, GRAPH_TREE.html, GRAPH_REPORT.md or other exports unless the chunk prompt explicitly asks for them; they cost time and are not part of the graph.';
@@ -227,8 +284,9 @@ describe('graph prompts: the server owns ontology typing', () => {
     expect(prompt).toContain(SERVER_TYPES_RULE);
   });
 
-  it.each(running)('%s runs cluster/label from the subject root without path arguments', (_name, prompt) => {
+  it.each(running)('%s re-clusters the subject root graph with cluster-only', (_name, prompt) => {
     expect(prompt).toContain(CLUSTER_RULE);
+    expect(prompt).toContain('graphify cluster-only graphify-out');
   });
 
   it.each(running)('%s skips unrequested exports', (_name, prompt) => {

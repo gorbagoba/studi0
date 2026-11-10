@@ -8,6 +8,8 @@ import type { TestHarness } from './helpers';
 
 // route every spawnArgs call at node itself: a real child without needing opencode
 process.env.OPENCODE_BIN = process.execPath;
+// blank the gateway: the typing pass must not reach a real model
+process.env.CHAT_BASE_URL = '';
 
 let h: TestHarness | undefined;
 
@@ -40,8 +42,10 @@ console.log('studi0-progress {"done":1,"total":1,"file":"material/a.md"}');
 console.log('DONE 1 files ok, 0 failed.');
 // real graphify always leaves a graph behind; the no-graph variant (fake success) skips this
 if (process.env.STUDI0_TEST_NO_GRAPH !== '1') {
+  const nodes = Array.from({ length: 24 }, (_, i) => ({ id: 'n' + i, label: 'Concept ' + i, entity_type: 'Concept' }));
+  const links = nodes.map((n, i) => ({ source: n.id, target: nodes[(i + 1) % nodes.length].id, relation: 'uses' }));
   fs.mkdirSync('graphify-out', { recursive: true });
-  fs.writeFileSync('graphify-out/graph.json', '{"nodes":[]}');
+  fs.writeFileSync('graphify-out/graph.json', JSON.stringify({ nodes, links }));
 }
 process.exit(0);
 `;

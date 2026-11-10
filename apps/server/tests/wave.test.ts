@@ -11,6 +11,8 @@ import type { TestHarness } from './helpers';
 process.env.OPENCODE_BIN = process.execPath;
 // preflight probes GRAPHIFY_BIN for real — node itself answers --version
 process.env.GRAPHIFY_BIN = process.execPath;
+// blank the gateway: the typing pass must not reach a real model
+process.env.CHAT_BASE_URL = '';
 
 // the wave size the harness app actually uses (cfg.maxChunkConcurrency)
 const WAVE = makeConfig().maxChunkConcurrency;
@@ -48,16 +50,26 @@ function stageScript(): string {
   // the fallback single-run pipeline.
   return `const fs = require('node:fs');
 const prompt = process.argv[process.argv.length - 1];
+// typed graph with real edges: the hollow-extraction guard must pass
+function healthyGraph() {
+  const nodes = Array.from({ length: 24 }, (_, i) => ({ id: 'n' + i, label: 'Concept ' + i, entity_type: 'Concept' }));
+  const links = nodes.map((n, i) => ({ source: n.id, target: nodes[(i + 1) % nodes.length].id, relation: 'uses' }));
+  return { nodes, links };
+}
+// graphify defaults, one node per file: the ontology gate must fail it
+function badGraph() {
+  const nodes = Array.from({ length: 12 }, (_, i) => ({ id: 'b' + i, label: 'B' + i, file_type: 'concept' }));
+  const links = nodes.map((n, i) => ({ source: n.id, target: nodes[(i + 1) % nodes.length].id, relation: 'cites' }));
+  return { nodes, links };
+}
 if (prompt.includes('graph verification agent')) {
   console.log('## Confirmed edges\\n\\n- a --uses--> b — supported by material');
   process.exit(0);
 }
 if (prompt.includes('per-chunk extraction outputs')) { // merge + export
   fs.mkdirSync('graphify-out', { recursive: true });
-  const graph = process.env.STUDI0_TEST_BAD_GRAPH === '1'
-    ? '{"nodes":[{"id":"a","label":"A","file_type":"concept"},{"id":"b","label":"B","file_type":"document"}],"links":[{"source":"a","target":"b","relation":"cites"}]}'
-    : '{"nodes":[]}';
-  fs.writeFileSync('graphify-out/graph.json', graph);
+  const graph = process.env.STUDI0_TEST_BAD_GRAPH === '1' ? badGraph() : healthyGraph();
+  fs.writeFileSync('graphify-out/graph.json', JSON.stringify(graph));
   console.log('DONE 0 files ok, 0 failed.');
   process.exit(0);
 }
@@ -105,7 +117,7 @@ console.log('studi0-progress {"done":0,"total":1,"file":null}');
 console.log('studi0-progress {"done":1,"total":1,"file":"material/a.md"}');
 console.log('DONE 1 files ok, 0 failed.');
 fs.mkdirSync('graphify-out', { recursive: true });
-fs.writeFileSync('graphify-out/graph.json', '{"nodes":[]}');
+fs.writeFileSync('graphify-out/graph.json', JSON.stringify(healthyGraph()));
 process.exit(0);
 `;
 }
@@ -321,7 +333,7 @@ describe('wave pipeline runner (T-P1/T-P2)', () => {
       const job = await waitForTerminal(jobId, 60_000);
       expect(job.status).toBe('failed');
       const error = job.error as string;
-      expect(error).toContain('graph ontology invalid: 2/2 nodes have unexpected entity_type');
+      expect(error).toContain('graph ontology invalid: 12/12 nodes have unexpected entity_type');
       expect(error).toContain('extraction must set entity_type, not file_type');
       const tail = (await h.app.inject({ method: 'GET', url: `/api/subjects/${id}/graph/log` })).json() as {
         log: string;

@@ -13,7 +13,7 @@ import {
   VERIFICATION_PROMPT,
 } from '../graph/prompts.js';
 import { planChunks, listMaterialFiles, PLAN_LIMITS } from '../graph/plan.js';
-import { auditGraph, mergeDuplicateNodes, ontologyProblems } from '../graph/quality.js';
+import { auditGraph, detectHollowExtraction, mergeDuplicateNodes, ontologyProblems } from '../graph/quality.js';
 import { graphAsk, typeGraphFile } from '../graph/typing.js';
 import { safeResolve } from '../fs/paths.js';
 import { safeWriteFile } from '../fs/safeWrite.js';
@@ -223,6 +223,15 @@ export const makeRunPipeline =
           return { status: 'failed', partial, error };
         }
       }
+      // hollow extraction (hollow model responses → one node per file) must fail
+      // before typing: typing a fallback graph would only dress up a failed build
+      const materialFileCount = (await listMaterialFiles(subject.path).catch(() => [])).length;
+      const hollow = detectHollowExtraction(graph, materialFileCount);
+      if (hollow) {
+        const error = `graph extraction produced no semantic content (${hollow}); graphify returned hollow responses — retry the build (extraction model ${cfg.graphModel || 'qwen3-coder-next'})`;
+        log(`FAILED: ${error}`);
+        return { status: 'failed', partial, error };
+      }
       // ontology typing runs before the gate so graphify's defaults get mapped;
       // a zero/partial result leaves the gate to fail with its precise message
       let assessed = graph;
@@ -260,7 +269,7 @@ export const makeRunPipeline =
         '--agent',
         'studi0-pipeline',
         '--standalone',
-        extractionPrompt(job.kind, subject.name),
+        extractionPrompt(job.kind, subject.name, cfg.graphTokenBudget),
       ]);
       log(`${job.kind} started (job ${job.id.slice(0, 8)})`);
       const flush = pipeLines(
@@ -343,7 +352,7 @@ export const makeRunPipeline =
           const rel = `graphify-out/chunks/chunk-${String(i + 1).padStart(2, '0')}.md`;
           await safeWriteFile(
             path.join(subject.path, rel),
-            chunkPromptFile(kind, subject.name, groups[i].map((f) => f.relPath)),
+            chunkPromptFile(kind, subject.name, groups[i].map((f) => f.relPath), cfg.graphTokenBudget),
           );
           chunks.push(rel);
         }
@@ -358,7 +367,7 @@ export const makeRunPipeline =
           '--agent',
           'studi0-pipeline',
           '--standalone',
-          planPrompt(kind, subject.name),
+          planPrompt(kind, subject.name, cfg.graphTokenBudget),
         ]);
         const planFlush = pipeLines(planChild, handleLine());
         const planRes = await planChild.done;
@@ -389,7 +398,7 @@ export const makeRunPipeline =
           '--agent',
           'studi0-pipeline',
           '--standalone',
-          chunkWavePrompt(chunk, job.kind as 'build' | 'update' | 'rebuild'),
+          chunkWavePrompt(chunk, job.kind as 'build' | 'update' | 'rebuild', cfg.graphTokenBudget),
         ]);
         const flush = pipeLines(child, handleLine());
         const res = await child.done;
@@ -425,7 +434,7 @@ export const makeRunPipeline =
         '--agent',
         'studi0-pipeline',
         '--standalone',
-        mergePrompt(subject.name),
+        mergePrompt(subject.name, cfg.graphTokenBudget),
       ]);
       const mergeFlush = pipeLines(mergeChild, handleLine());
       const mergeRes = await mergeChild.done;

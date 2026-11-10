@@ -204,6 +204,23 @@ describe('runner typing pass', () => {
     ).resolves.toBe(INSPECT_SCRIPT);
   });
 
+  it('fails a hollow graph before typing and never types it', async () => {
+    const hollow = {
+      nodes: [
+        { id: 'a', label: 'lecture-01.pdf', file_type: 'document' },
+        { id: 'b', label: 'lecture-02.pdf', file_type: 'document' },
+      ],
+      links: [],
+    };
+    const { outcome } = await runJob('build', hollow);
+
+    expect(outcome.status).toBe('failed');
+    expect(outcome.error).toContain('graph extraction produced no semantic content');
+    expect(outcome.error).toContain('graphify returned hollow responses');
+    expect(outcome.error).toContain('extraction model qwen3-coder-next');
+    expect(mocks.chatCompletion).not.toHaveBeenCalled();
+  });
+
   it('skips typing for recluster', async () => {
     const typedGraph = {
       nodes: [

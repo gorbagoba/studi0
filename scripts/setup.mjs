@@ -224,7 +224,7 @@ export function writeEnvFile(changes, { exists = existsSync(path.join(repoRoot, 
 // ── graphify LLM: which backend extracts the graph (SoCLaaS is NUS-only) ──
 
 /** Fallback extraction model when none is saved (mirrors apps/server graphModel). */
-export const GRAPH_DEFAULT_MODEL = 'nemotron3.5:30b';
+export const GRAPH_DEFAULT_MODEL = 'qwen3-coder-next';
 
 /** Display-safe secret: never more than the last 4 chars. */
 export function maskSecret(s) {

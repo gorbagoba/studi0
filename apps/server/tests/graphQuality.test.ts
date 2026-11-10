@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { auditGraph, mergeDuplicateNodes, ontologyProblems } from '../src/graph/quality.js';
+import { auditGraph, detectHollowExtraction, mergeDuplicateNodes, ontologyProblems } from '../src/graph/quality.js';
 
 /** graphify's real default output: file_type instead of entity_type, links, default relations. */
 const graphifyDefault = {
@@ -105,6 +105,53 @@ describe('ontologyProblems', () => {
       edges: [{ source: 'a', target: 'b', relation: 'prerequisite_of' }],
     };
     expect(ontologyProblems(auditGraph(graph)).error).toBeNull();
+  });
+});
+
+describe('detectHollowExtraction', () => {
+  it('fails a graph that is one document node per material file', () => {
+    const graph = {
+      nodes: [
+        { id: 'a', label: 'lecture-01.pdf', file_type: 'document' },
+        { id: 'b', label: 'lecture-02.pdf', file_type: 'document' },
+        { id: 'c', label: 'notes.md', file_type: 'document' },
+      ],
+      links: [],
+    };
+    const reason = detectHollowExtraction(graph, 3);
+    expect(reason).toContain('≈ one node per file');
+  });
+
+  it('fails a sparse untyped document graph even when the node count looks plausible', () => {
+    const graph = {
+      nodes: Array.from({ length: 8 }, (_, i) => ({ id: `d${i}`, label: `file-${i}.pdf`, file_type: 'document' })),
+      links: [{ source: 'd0', target: 'd1', relation: 'cites' }],
+    };
+    const reason = detectHollowExtraction(graph, 1);
+    expect(reason).toContain('untyped documents');
+  });
+
+  it('fails an empty graph', () => {
+    expect(detectHollowExtraction({ nodes: [] }, 2)).toBe('graph has no nodes');
+    expect(detectHollowExtraction({}, 2)).not.toBeNull();
+  });
+
+  it('passes a small typed graph with real edges', () => {
+    const graph = {
+      nodes: [
+        { id: 'a', label: 'Random Variables', entity_type: 'Concept' },
+        { id: 'b', label: 'Joint Distributions', entity_type: 'Concept' },
+        { id: 'c', label: 'Gradient Descent', entity_type: 'Algorithm' },
+        { id: 'd', label: 'Bias-Variance', entity_type: 'Pitfall' },
+        { id: 'e', label: 'Law of Total Variance', entity_type: 'Proof' },
+      ],
+      edges: [
+        { source: 'a', target: 'b', relation: 'prerequisite_of' },
+        { source: 'b', target: 'c', relation: 'uses' },
+        { source: 'c', target: 'd', relation: 'confused_with' },
+      ],
+    };
+    expect(detectHollowExtraction(graph, 2)).toBeNull();
   });
 });
 

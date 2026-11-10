@@ -30,6 +30,25 @@ function clearGraphEnv(): void {
   for (const key of GRAPH_KEYS) delete process.env[key];
 }
 
+describe('graphTokenBudget', () => {
+  it('defaults to 3000', () => {
+    delete process.env.STUDI0_GRAPH_TOKEN_BUDGET;
+    expect(makeConfig('/tmp/studi0-graphenv').graphTokenBudget).toBe(3000);
+  });
+
+  it('honours STUDI0_GRAPH_TOKEN_BUDGET', () => {
+    process.env.STUDI0_GRAPH_TOKEN_BUDGET = '1200';
+    expect(makeConfig('/tmp/studi0-graphenv').graphTokenBudget).toBe(1200);
+  });
+
+  it('falls back to 3000 on garbage', () => {
+    process.env.STUDI0_GRAPH_TOKEN_BUDGET = 'lots';
+    expect(makeConfig('/tmp/studi0-graphenv').graphTokenBudget).toBe(3000);
+    process.env.STUDI0_GRAPH_TOKEN_BUDGET = '-5';
+    expect(makeConfig('/tmp/studi0-graphenv').graphTokenBudget).toBe(3000);
+  });
+});
+
 describe('graphEnv', () => {
   it('defaults to the chat gateway and the extraction model (backend openai)', () => {
     clearGraphEnv();
@@ -37,14 +56,25 @@ describe('graphEnv', () => {
     process.env.CHAT_API_KEY = 'chat-key';
     const cfg = makeConfig('/tmp/studi0-graphenv');
     expect(cfg.graphBackend).toBe('openai');
-    expect(cfg.graphModel).toBe('nemotron3.5:30b');
+    expect(cfg.graphModel).toBe('qwen3-coder-next');
     expect(graphEnv(cfg)).toMatchObject({
       GRAPHIFY_BACKEND: 'openai',
       OPENAI_BASE_URL: 'http://chat.local/v1',
       OPENAI_API_KEY: 'chat-key',
-      GRAPHIFY_OPENAI_MODEL: 'nemotron3.5:30b',
-      OPENAI_MODEL: 'nemotron3.5:30b',
+      GRAPHIFY_OPENAI_MODEL: 'qwen3-coder-next',
+      OPENAI_MODEL: 'qwen3-coder-next',
     });
+  });
+
+  it('STUDI0_GRAPH_MODEL overrides the default extraction model', () => {
+    clearGraphEnv();
+    process.env.STUDI0_GRAPH_BACKEND = 'openai';
+    process.env.STUDI0_GRAPH_BASE_URL = 'http://gw.local/v1';
+    process.env.STUDI0_GRAPH_API_KEY = 'gw-key';
+    process.env.STUDI0_GRAPH_MODEL = 'custom-extract-model';
+    const cfg = makeConfig('/tmp/studi0-graphenv');
+    expect(cfg.graphModel).toBe('custom-extract-model');
+    expect(graphEnv(cfg).GRAPHIFY_OPENAI_MODEL).toBe('custom-extract-model');
   });
 
   it('neutralises every vendor key so detection cannot pick them', () => {

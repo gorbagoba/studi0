@@ -12,6 +12,10 @@ import {
 const CHAT = { CHAT_BASE_URL: 'http://gw.local/v1', CHAT_API_KEY: 'chat-secret-key' };
 
 describe('graph LLM setup helpers', () => {
+  it('defaults to the reliable extraction model', () => {
+    expect(GRAPH_DEFAULT_MODEL).toBe('qwen3-coder-next');
+  });
+
   it('choice 1 inherits the chat gateway and keeps a saved model', () => {
     expect(graphEnvChanges(1, {}, CHAT)).toEqual({
       STUDI0_GRAPH_BACKEND: 'openai',

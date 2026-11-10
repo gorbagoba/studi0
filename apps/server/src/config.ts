@@ -49,6 +49,8 @@ export interface Config {
   graphApiKey: string;
   /** model graphify itself uses (GRAPHIFY_OPENAI_MODEL) */
   graphModel: string;
+  /** graphify --token-budget: smaller = more chunks = far denser extraction (STUDI0_GRAPH_TOKEN_BUDGET) */
+  graphTokenBudget: number;
   /** project-local graphify virtualenv (STUDI0_GRAPHIFY_VENV) */
   graphifyVenv: string;
   /** graphify executable (GRAPHIFY_BIN) — derived from graphifyVenv when present, else bare graphify */
@@ -106,6 +108,7 @@ try {
       'STUDI0_GRAPH_BASE_URL',
       'STUDI0_GRAPH_API_KEY',
       'STUDI0_GRAPH_MODEL',
+      'STUDI0_GRAPH_TOKEN_BUDGET',
       'STUDI0_GRAPHIFY_VENV',
       'GRAPHIFY_BIN',
       'ANTHROPIC_API_KEY',
@@ -145,7 +148,7 @@ export function makeConfig(dataDir?: string): Config {
   else if (graphBackend === 'claude') graphApiKey = process.env.ANTHROPIC_API_KEY ?? '';
   else if (graphBackend === 'gemini') graphApiKey = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? '';
   const graphModel =
-    process.env.STUDI0_GRAPH_MODEL ?? (graphBackend === 'openai' ? 'nemotron3.5:30b' : '');
+    process.env.STUDI0_GRAPH_MODEL ?? (graphBackend === 'openai' ? 'qwen3-coder-next' : '');
   const missing =
     graphBackend === 'openai' ? !(graphBaseUrl && graphApiKey && graphModel) : !graphApiKey;
   if (graphBackend !== 'none' && missing) {
@@ -153,6 +156,8 @@ export function makeConfig(dataDir?: string): Config {
     graphBackend = 'none';
   }
   const graphifyVenv = process.env.STUDI0_GRAPHIFY_VENV ?? resolve(repoRoot, '.graphify-venv');
+  // smaller budget → more chunks → far more entities (measured 4/file @15000 vs 23/file @3000)
+  const tokenBudget = Number.parseInt(process.env.STUDI0_GRAPH_TOKEN_BUDGET ?? '', 10);
   // venv layout differs by platform; the derived bin is only trusted when it exists
   const venvBin = resolve(
     graphifyVenv,
@@ -204,6 +209,7 @@ export function makeConfig(dataDir?: string): Config {
     graphBaseUrl,
     graphApiKey,
     graphModel,
+    graphTokenBudget: Number.isFinite(tokenBudget) && tokenBudget > 0 ? tokenBudget : 3000,
     graphifyVenv,
     graphifyBin,
   };

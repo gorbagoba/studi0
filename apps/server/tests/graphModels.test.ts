@@ -8,6 +8,8 @@ import { jobKindSchema } from '@studi0/shared';
 // stub spawn: the whole point is reading the args each stage spawns with
 // preflight probes GRAPHIFY_BIN for real — node itself answers --version
 process.env.GRAPHIFY_BIN = process.execPath;
+// blank the gateway: spawns are stubbed, so the typing pass must not reach a real model
+process.env.CHAT_BASE_URL = '';
 const mocks = vi.hoisted(() => ({ spawnArgs: vi.fn() }));
 vi.mock('../src/util/proc.js', () => ({
   spawnArgs: mocks.spawnArgs,
@@ -27,6 +29,15 @@ import { makeConfig } from '../src/config.js';
 const CHUNK = 'graphify-out/chunks/chunk-01.md';
 const made: string[] = [];
 
+/** Typed graph so the hollow-extraction guard passes (no material/ files → count 0). */
+const healthyGraph = {
+  nodes: [
+    { id: 'a', label: 'Gradient descent', entity_type: 'Algorithm' },
+    { id: 'b', label: 'Loss function', entity_type: 'Concept' },
+  ],
+  links: [{ source: 'a', target: 'b', relation: 'uses' }],
+};
+
 afterEach(async () => {
   for (const dir of made.splice(0)) {
     await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 150 });
@@ -45,7 +56,7 @@ async function spawnedArgs(
   // 'nested' reproduces an agent that cd-ed into graphify-out before extracting
   const graphDir = layout === 'nested' ? path.join(dir, 'graphify-out', 'graphify-out') : path.join(dir, 'graphify-out');
   await mkdir(graphDir, { recursive: true });
-  await writeFile(path.join(graphDir, 'graph.json'), '{}');
+  await writeFile(path.join(graphDir, 'graph.json'), JSON.stringify(healthyGraph));
   const db = openDb(path.join(dir, 'studi0.db'));
   insertSubject(db, { id: 'subject-1', name: 'S', path: dir, created_at: new Date().toISOString() });
   const job = jobsRepo.insertJob(db, 'job-1', 'subject-1', kind);
@@ -136,6 +147,20 @@ describe('graph pipeline model per stage', () => {
       }
     } finally {
       for (const key of Object.keys(env)) delete process.env[key];
+    }
+  });
+
+  it('passes the configured token budget to every extraction stage', async () => {
+    process.env.STUDI0_GRAPH_TOKEN_BUDGET = '1200';
+    try {
+      const { calls } = await spawnedArgs();
+      const extract = calls.filter((a) =>
+        /PLANNER|Execute this graphify chunk|per-chunk extraction outputs/.test(a[a.length - 1]),
+      );
+      expect(extract.length).toBeGreaterThan(0);
+      for (const args of extract) expect(args[args.length - 1]).toContain('--token-budget 1200');
+    } finally {
+      delete process.env.STUDI0_GRAPH_TOKEN_BUDGET;
     }
   });
 

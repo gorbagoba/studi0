@@ -109,6 +109,32 @@ export function auditGraph(graphJson: unknown): GraphAudit {
   };
 }
 
+/**
+ * graphify's per-file fallback: no semantic content, just one document node per
+ * material file (or a sparse untyped document graph). Returns the reason, or null.
+ */
+export function detectHollowExtraction(graphJson: unknown, materialFileCount: number): string | null {
+  const nodes = nodeList(graphJson);
+  const edges = edgeList(graphJson);
+  const n = nodes.length;
+  if (n === 0) return 'graph has no nodes';
+  if (n >= 2 && n <= materialFileCount + 1 && n / Math.max(1, materialFileCount) < 3) {
+    return `${n} nodes for ${materialFileCount} material files (≈ one node per file)`;
+  }
+  const untypedDocs = nodes.filter((node) => {
+    const entityType = node.entity_type;
+    const untyped = !(typeof entityType === 'string' && entityType.trim());
+    return (
+      untyped &&
+      (node.file_type === 'document' || /\.(pdf|md|txt)$/i.test(nodeLabel(node)))
+    );
+  }).length;
+  if (edges.length / n < 1.2 && untypedDocs / n > 0.7) {
+    return `${untypedDocs}/${n} nodes are untyped documents and only ${edges.length} edges for ${n} nodes`;
+  }
+  return null;
+}
+
 export interface OntologyProblems {
   nodeViolations: number;
   edgeViolations: number;
