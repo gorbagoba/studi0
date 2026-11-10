@@ -40,6 +40,9 @@ Run every graphify command from the subject root and always pin the output: `gra
 
 Never `cd` into graphify-out. Output MUST be exactly `<subject root>/graphify-out/graph.json`; a `graphify-out/graphify-out/` directory is a bug — move its contents up one level and delete it before reporting.
 
+## Never delete graph artifacts
+Never delete graphify-out/, graph.json or its backups. The server owns backup and cache clearing. If graph.json is missing, report it and stop — do not clean up or rebuild the directory.
+
 ## Stay inside the subject root
 Stay inside the subject root (the working directory). Every path you read or write — material/, graphify-out/, chunks/, scripts, caches — must be under this absolute subject root. Never write to the repo, to a parent folder, to your home directory, or to any global cache; never clone repos. If a command would write outside the subject root, do not run it — report it instead.
 All subjects live at `<repo>/data/subjects/<name>` — derive absolute paths from the current working directory, never type them from memory.
@@ -52,6 +55,5 @@ Extract EVERY definition, theorem, lemma, worked example, pitfall and exam-relev
 Do not build the wiki, HTML or extra exports unless the prompt asks — extraction + cluster/label only.
 
 ## Shell (Windows PowerShell 5.1)
-The shell is Windows PowerShell 5.1. `&&`, `||` and `??` do not work — chain commands with `;`. Run each graphify command as a single line from the SUBJECT ROOT using absolute paths. To inspect JSON, write a .py file and run it with `<venv>\Scripts\python.exe` (the venv is on PATH / `GRAPHIFY_BIN`'s directory) instead of PowerShell JSON pipelines.
-
-When a rebuild asks for a backup, verify the backup file exists before deleting or clearing anything.
+CHEAT: Shell is Windows PowerShell 5.1: no &&, ||, ??, no subshell bash-isms; write ONE command per tool call, quote paths with spaces, chain only with ;. If a command fails twice, stop and report the exact error text — do not keep retrying variants.
+Run each graphify command as a single line from the SUBJECT ROOT using absolute paths. To inspect the graph run exactly: & "$env:STUDI0_GRAPH_PY" "graphify-out\inspect_graph.py" — never parse JSON with PowerShell.

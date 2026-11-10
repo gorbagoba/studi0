@@ -14,10 +14,13 @@ import {
 } from '../graph/prompts.js';
 import { planChunks, listMaterialFiles, PLAN_LIMITS } from '../graph/plan.js';
 import { auditGraph, mergeDuplicateNodes, ontologyProblems } from '../graph/quality.js';
+import { graphAsk, typeGraphFile } from '../graph/typing.js';
 import { safeResolve } from '../fs/paths.js';
 import { safeWriteFile } from '../fs/safeWrite.js';
 import { graphEnv } from '../graph/backendEnv.js';
 import { normalizeGraphifyOutput } from '../graph/normalize.js';
+import { INSPECT_SCRIPT } from '../graph/inspectScript.js';
+import { prepareRebuild } from '../graph/rebuildPrep.js';
 import { checkGraphify } from '../graph/preflight.js';
 import * as jobsRepo from '../db/repos/jobs.js';
 import type { Db } from '../db/index.js';
@@ -85,6 +88,26 @@ export const makeRunPipeline =
     }
     log(`graphify ${preflight.version} (backend ${cfg.graphBackend}, model ${cfg.graphModel || 'default'})`);
     if (job.kind === 'rebuild') log('full rebuild (cache cleared)');
+
+    // zero-shell inspection: the server writes the python the prompts tell the agent to run
+    try {
+      await safeWriteFile(
+        safeResolve(subject.path, 'graphify-out/inspect_graph.py'),
+        INSPECT_SCRIPT,
+      );
+    } catch (e) {
+      log(`inspect script write failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    // rebuild prep is server-owned: back up the graph and clear stale state before any agent runs
+    if (job.kind === 'rebuild') {
+      try {
+        await prepareRebuild(subject.path, log);
+      } catch (e) {
+        const error = `rebuild prep failed: ${e instanceof Error ? e.message : String(e)}`;
+        log(`FAILED: ${error}`);
+        return { status: 'failed', partial: null, error };
+      }
+    }
 
     let aborted = false;
     const liveKills = new Set<() => void>();
@@ -200,7 +223,21 @@ export const makeRunPipeline =
           return { status: 'failed', partial, error };
         }
       }
-      const audit = auditGraph(graph);
+      // ontology typing runs before the gate so graphify's defaults get mapped;
+      // a zero/partial result leaves the gate to fail with its precise message
+      let assessed = graph;
+      if (job.kind !== 'recluster') {
+        try {
+          const typed = await typeGraphFile(subject.path, graphAsk(cfg, signal), log);
+          assessed = typed.graph;
+          log(
+            `typed ${typed.nodes} nodes, ${typed.edges} edges (graph model ${cfg.chatModel || 'default'})`,
+          );
+        } catch (e) {
+          log(`typing failed: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+      const audit = auditGraph(assessed);
       const problems = ontologyProblems(audit);
       log(
         `graph quality: ${audit.nodes} nodes, ${audit.edges} edges, ${audit.orphans} orphans, ${merged} duplicates merged, ${problems.nodeViolations + problems.edgeViolations} ontology violations`,

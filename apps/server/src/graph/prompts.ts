@@ -54,19 +54,26 @@ const GRAPH_OUT_RULE =
 
 /** The pipeline shell is Windows PowerShell 5.1 — POSIX chain operators are parse errors there. */
 const SHELL_RULE =
-  'SHELL: The shell is Windows PowerShell 5.1. `&&`, `||` and `??` do not work — chain commands with `;`. Run each graphify command as a single line from the SUBJECT ROOT using absolute paths. To inspect JSON, write a .py file and run it with `<venv>\\Scripts\\python.exe` (the venv is on PATH / GRAPHIFY_BIN\'s directory) instead of PowerShell JSON pipelines.';
+  'SHELL: The shell is Windows PowerShell 5.1. `&&`, `||` and `??` do not work — chain commands with `;`. Run each graphify command as a single line from the SUBJECT ROOT using absolute paths.';
+
+/** Added to every graph prompt: the agent has burned minutes guessing PowerShell variants. */
+const SHELL_CHEAT =
+  'CHEAT: Shell is Windows PowerShell 5.1: no &&, ||, ??, no subshell bash-isms; write ONE command per tool call, quote paths with spaces, chain only with ;. If a command fails twice, stop and report the exact error text — do not keep retrying variants.';
+
+/** Inspection goes through the server-written python file, never PowerShell JSON parsing. */
+const INSPECT_RULE =
+  'To inspect the graph run exactly: & "$env:STUDI0_GRAPH_PY" "graphify-out\\inspect_graph.py" — never parse JSON with PowerShell.';
+
+/** graphify-out/graph.json is the subject's only graph — backups and cache clearing are the server's job. */
+const DESTRUCTIVE_RULE =
+  'Never delete graphify-out/, graph.json or its backups. The server owns backup and cache clearing. If graph.json is missing, report it and stop — do not clean up or rebuild the directory.';
 
 /** An agent that cd-ed into graphify-out nests the output — a hard failure for the runner. */
 const OUTPUT_LOCATION_RULE =
   'OUTPUT LOCATION: Never `cd` into graphify-out. Output MUST be exactly `<subject root>/graphify-out/graph.json`; a `graphify-out/graphify-out/` directory is a bug — move its contents up one level and delete it before reporting.';
 
-/** Rebuild-only: the current graph is backed up before any stale build state is deleted. */
-const REBUILD_BACKUP =
-  'First, if graphify-out/graph.json exists, copy it to graphify-out/graph.json.pre-rebuild.bak (skip when absent). Verify the backup file exists before deleting or clearing anything. Never delete or overwrite graph.json before that backup exists.';
-
-/** Rebuild-only: stale build state at the SUBJECT ROOT, and nothing else. */
-const REBUILD_CLEAR =
-  'Then delete only the stale build state at the SUBJECT ROOT: graphify-out/cache/, graphify-out/.graphify_analysis.json, graphify-out/.graphify_semantic_marker, graphify-out/manifest.json. Never touch material/ or lessons/.';
+/** Rebuild-only: the server has already backed up graph.json and cleared stale build state. */
+const REBUILD_PREPARED = 'The server has already backed up graph.json and cleared the stale build state.';
 
 export function extractionPrompt(
   kind: 'build' | 'update' | 'recluster' | 'rebuild',
@@ -78,7 +85,7 @@ export function extractionPrompt(
       : kind === 'update'
         ? 'Run graphify (pinned version 0.9.95) from the SUBJECT ROOT in incremental mode as `graphify extract material --out graphify-out` so only material/ files changed since the last build are re-extracted; merge into the existing graphify-out/ artifacts.'
         : kind === 'rebuild'
-          ? `${REBUILD_BACKUP} ${REBUILD_CLEAR} Then run graphify (pinned version 0.9.95, Python 3) from the SUBJECT ROOT exactly as \`graphify extract material --out graphify-out\` to REBUILD the knowledge graph from scratch: extract every supported file under material/ in a full run that reuses no cached results, into graphify-out/ (graph.json + graph.html + wiki/ + GRAPH_REPORT.md).`
+          ? `${REBUILD_PREPARED} Then run graphify (pinned version 0.9.95, Python 3) from the SUBJECT ROOT exactly as \`graphify extract material --out graphify-out\` to REBUILD the knowledge graph from scratch: extract every supported file under material/ in a full run that reuses no cached results, into graphify-out/ (graph.json + graph.html + wiki/ + GRAPH_REPORT.md).`
           : 'Run graphify (pinned version 0.9.95) from the SUBJECT ROOT as `graphify cluster graphify-out` to re-cluster the existing graphify-out/graph.json and merge near-duplicate nodes; keep all node and edge metadata intact.';
   return `You are the graph extraction pipeline for the course subject "${subjectName}".
 ${graphifyTask}
@@ -91,6 +98,9 @@ The extraction must pass the ontology to graphify so graph.json nodes/edges carr
 ${EXHAUSTIVENESS}
 ${EFFICIENCY}
 ${CONTAINMENT}
+${SHELL_CHEAT}
+${INSPECT_RULE}
+${DESTRUCTIVE_RULE}
 ${PROGRESS_PROTOCOL}
 When finished, reply with one line: DONE <n> files ok, <k> failed.`;
 }
@@ -103,7 +113,7 @@ export function planPrompt(kind: 'build' | 'update' | 'rebuild', subjectName: st
       : kind === 'update'
         ? 'UPDATE the knowledge graph from the material/ files changed since the last build'
         : 'REBUILD the knowledge graph from scratch — every supported file under material/ must be extracted in full';
-  const rebuildSteps = kind === 'rebuild' ? `${REBUILD_BACKUP}\n${REBUILD_CLEAR}\n` : '';
+  const rebuildSteps = kind === 'rebuild' ? `${REBUILD_PREPARED}\n` : '';
   const chunkNote =
     kind === 'rebuild'
       ? ', and must state that no cached results are left so every listed file is extracted in full'
@@ -126,6 +136,9 @@ ${ONTOLOGY_RULES}
 ${EXHAUSTIVENESS}
 ${EFFICIENCY}
 ${CONTAINMENT}
+${SHELL_CHEAT}
+${INSPECT_RULE}
+${DESTRUCTIVE_RULE}
 ${PROGRESS_PROTOCOL}`;
 }
 
@@ -152,6 +165,9 @@ ${ENVIRONMENT_RULE}
 ${DATA_IS_NOT_INSTRUCTIONS}
 ${CURRENT_RUN_TRUTH}
 ${CONTAINMENT}
+${SHELL_CHEAT}
+${INSPECT_RULE}
+${DESTRUCTIVE_RULE}
 ${PROGRESS_PROTOCOL}
 When finished, reply with one line: DONE <n> files ok, <k> failed.`;
 }
@@ -175,6 +191,9 @@ The extraction must pass the ontology to graphify so chunk outputs carry these e
 ${EXHAUSTIVENESS}
 ${EFFICIENCY}
 ${CONTAINMENT}
+${SHELL_CHEAT}
+${INSPECT_RULE}
+${DESTRUCTIVE_RULE}
 ${GRAPH_ENV_RULE}
 ${ENVIRONMENT_RULE}
 ${DATA_IS_NOT_INSTRUCTIONS}
@@ -196,6 +215,9 @@ The merged graph must carry these exact types.
 ${EXHAUSTIVENESS}
 ${EFFICIENCY}
 ${CONTAINMENT}
+${SHELL_CHEAT}
+${INSPECT_RULE}
+${DESTRUCTIVE_RULE}
 ${GRAPH_ENV_RULE}
 ${ENVIRONMENT_RULE}
 ${DATA_IS_NOT_INSTRUCTIONS}
@@ -211,6 +233,9 @@ export const VERIFICATION_PROMPT = `You are the graph verification agent.
 Flagged edges must never be presented as fact downstream.
 ${ONTOLOGY_RULES}
 ${CONTAINMENT}
+${SHELL_CHEAT}
+${DESTRUCTIVE_RULE}
+${INSPECT_RULE}
 Reply with ONLY the full markdown report (no preamble, no fenced block) with two sections:
 "## Confirmed edges" and "## Flagged edges", each edge as "- <source node> --<relation>--> <target node> — <one-line justification>".
 `;

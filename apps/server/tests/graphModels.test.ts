@@ -144,10 +144,13 @@ describe('graph pipeline model per stage', () => {
     const plan = calls.find((a) => a[a.length - 1].includes('PLANNER'));
     expect(plan, 'no plan stage spawned').toBeTruthy();
     expect(plan![plan!.length - 1]).toContain('REBUILD');
-    expect(plan![plan!.length - 1]).toContain('graph.json.pre-rebuild.bak');
+    // backup and cache clearing are server-owned now
+    expect(plan![plan!.length - 1]).not.toContain('graph.json.pre-rebuild.bak');
+    expect(existsSync(path.join(dir, 'graphify-out', 'graph.json.pre-rebuild.bak'))).toBe(true);
     expect(calls.some((a) => a[a.length - 1].includes('Execute this graphify chunk'))).toBe(true);
     const buildLog = await readFile(path.join(dir, 'graphify-out', 'build.log'), 'utf8');
     expect(buildLog).toContain('full rebuild (cache cleared)');
+    expect(buildLog).toContain('rebuild prep: backed up graph.json');
   });
 
   it('normalises a nested graphify-out before the success check', async () => {

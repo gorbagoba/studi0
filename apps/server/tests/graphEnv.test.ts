@@ -136,6 +136,22 @@ describe('graphEnv', () => {
     expect(env.PYTHONNOUSERSITE).toBe('1');
   });
 
+  it('exports the venv python for the graph inspector on win32 and posix', () => {
+    const venv = path.resolve('/tmp/studi0-venv');
+    const cfg = { ...makeConfig('/tmp/studi0-graphenv'), graphifyVenv: venv };
+    const original = process.platform;
+    const setPlatform = (value: string) =>
+      Object.defineProperty(process, 'platform', { value, configurable: true });
+    try {
+      setPlatform('win32');
+      expect(graphEnv(cfg).STUDI0_GRAPH_PY).toBe(path.join(venv, 'Scripts', 'python.exe'));
+      setPlatform('linux');
+      expect(graphEnv(cfg).STUDI0_GRAPH_PY).toBe(path.join(venv, 'bin', 'python'));
+    } finally {
+      setPlatform(original);
+    }
+  });
+
   it('incomplete gateway config warns once and falls back to none', () => {
     clearGraphEnv();
     delete process.env.CHAT_BASE_URL;

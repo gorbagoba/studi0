@@ -8,10 +8,12 @@ import type { Config } from '../config.js';
  */
 export function graphEnv(cfg: Config): Record<string, string> {
   const venvBinDir = path.resolve(cfg.graphifyVenv, process.platform === 'win32' ? 'Scripts' : 'bin');
+  const python = path.join(venvBinDir, process.platform === 'win32' ? 'python.exe' : 'python');
   const env: Record<string, string> = {
     // the agent runs bare `graphify` — the project venv must win PATH lookup
     PATH: [venvBinDir, process.env.PATH ?? ''].filter(Boolean).join(path.delimiter),
     GRAPHIFY_BIN: cfg.graphifyBin,
+    STUDI0_GRAPH_PY: python,
     VIRTUAL_ENV: cfg.graphifyVenv,
     PYTHONNOUSERSITE: '1',
     GRAPHIFY_BACKEND: cfg.graphBackend,

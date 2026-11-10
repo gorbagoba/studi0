@@ -4,21 +4,21 @@ export const RELATIONS = ['prerequisite_of', 'uses', 'confused_with', 'contradic
 /** graphify's built-in enums — seeing any of these means the ontology never reached extraction. */
 export const DEFAULT_RELATIONS = ['cites', 'references', 'conceptually_related_to', 'related_to'];
 
-type Rec = Record<string, unknown>;
+export type Rec = Record<string, unknown>;
 
-function rec(v: unknown): Rec | null {
+export function rec(v: unknown): Rec | null {
   return typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Rec) : null;
 }
 
-function list(v: unknown): unknown[] {
+export function list(v: unknown): unknown[] {
   return Array.isArray(v) ? v : [];
 }
 
-function nodeList(graphJson: unknown): Rec[] {
+export function nodeList(graphJson: unknown): Rec[] {
   return list(rec(graphJson)?.nodes).map((n) => rec(n) ?? {});
 }
 
-function edgeKey(graphJson: unknown): 'edges' | 'links' | null {
+export function edgeKey(graphJson: unknown): 'edges' | 'links' | null {
   const g = rec(graphJson);
   if (!g) return null;
   if (Array.isArray(g.edges)) return 'edges';
@@ -26,18 +26,18 @@ function edgeKey(graphJson: unknown): 'edges' | 'links' | null {
   return null;
 }
 
-function edgeList(graphJson: unknown): Rec[] {
+export function edgeList(graphJson: unknown): Rec[] {
   const key = edgeKey(graphJson);
   if (!key) return [];
   return list((rec(graphJson) as Rec)[key]).map((e) => rec(e) ?? {});
 }
 
-function nodeId(node: Rec): string {
+export function nodeId(node: Rec): string {
   const id = node.id;
   return typeof id === 'string' ? id : typeof id === 'number' ? String(id) : '';
 }
 
-function nodeLabel(node: Rec): string {
+export function nodeLabel(node: Rec): string {
   const label = node.label ?? node.name;
   return typeof label === 'string' ? label : '';
 }
@@ -50,12 +50,12 @@ function nodeType(node: Rec): string {
   return '(missing)';
 }
 
-function edgeRelation(edge: Rec): string {
+export function edgeRelation(edge: Rec): string {
   const v = edge.relation ?? edge.type;
   return typeof v === 'string' && v.trim() ? v.trim() : '(missing)';
 }
 
-function endpoint(v: unknown): string {
+export function endpoint(v: unknown): string {
   if (typeof v === 'string') return v;
   const r = rec(v);
   const id = r?.id;
@@ -116,8 +116,8 @@ export interface OntologyProblems {
   error: string | null;
 }
 
-const knownType = (t: string) => (ENTITY_TYPES as readonly string[]).includes(t);
-const knownRelation = (r: string) => (RELATIONS as readonly string[]).includes(r);
+export const knownType = (t: string) => (ENTITY_TYPES as readonly string[]).includes(t);
+export const knownRelation = (r: string) => (RELATIONS as readonly string[]).includes(r);
 
 /** >5% unexpected types/relations, or any graphify default relation, fails the build. */
 export function ontologyProblems(audit: GraphAudit): OntologyProblems {

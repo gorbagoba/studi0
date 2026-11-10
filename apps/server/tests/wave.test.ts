@@ -304,6 +304,10 @@ describe('wave pipeline runner (T-P1/T-P2)', () => {
   );
 
   it('fails the build when extraction kept graphify default ontology', async () => {
+    // typing must not silently fix the defaults here: blank the gateway so every
+    // typing batch fails and the ontology gate reports the raw extraction
+    const prevBaseUrl = process.env.CHAT_BASE_URL;
+    process.env.CHAT_BASE_URL = '';
     h = await makeHarness();
     const { id, root } = await createSubject('BadOntology');
     await writeFile(path.join(root, 'run'), stageScript());
@@ -327,6 +331,8 @@ describe('wave pipeline runner (T-P1/T-P2)', () => {
     } finally {
       delete process.env.STUDI0_TEST_BAD_GRAPH;
       delete process.env.STUDI0_TEST_WAVELOG;
+      if (prevBaseUrl === undefined) delete process.env.CHAT_BASE_URL;
+      else process.env.CHAT_BASE_URL = prevBaseUrl;
     }
   }, 60_000);
 });

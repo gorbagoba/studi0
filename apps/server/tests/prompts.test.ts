@@ -18,7 +18,7 @@ const ENVIRONMENT_RULE =
   'ENVIRONMENT: graphify is the project venv binary already on PATH (GRAPHIFY_BIN) and the backend/model env is preset. Verify it once with `graphify --version` and one `graphify extract` run; do NOT search for installs, do NOT check for API keys, do NOT create venvs.';
 
 const SHELL_RULE =
-  'SHELL: The shell is Windows PowerShell 5.1. `&&`, `||` and `??` do not work — chain commands with `;`. Run each graphify command as a single line from the SUBJECT ROOT using absolute paths. To inspect JSON, write a .py file and run it with `<venv>\\Scripts\\python.exe` (the venv is on PATH / GRAPHIFY_BIN\'s directory) instead of PowerShell JSON pipelines.';
+  'SHELL: The shell is Windows PowerShell 5.1. `&&`, `||` and `??` do not work — chain commands with `;`. Run each graphify command as a single line from the SUBJECT ROOT using absolute paths.';
 
 const OUTPUT_LOCATION_RULE =
   'OUTPUT LOCATION: Never `cd` into graphify-out. Output MUST be exactly `<subject root>/graphify-out/graph.json`; a `graphify-out/graphify-out/` directory is a bug — move its contents up one level and delete it before reporting.';
@@ -89,27 +89,21 @@ describe('graph prompts: graphify-out stays at the subject root', () => {
   });
 });
 
-describe('graph prompts: rebuild starts clean from a backed-up graph', () => {
+describe('graph prompts: rebuild is prepared by the server', () => {
   const rebuildPrompts: [string, string][] = [
     ['extractionPrompt rebuild', extractionPrompt('rebuild', 'st2334')],
     ['planPrompt rebuild', planPrompt('rebuild', 'st2334')],
     ['chunkWavePrompt rebuild', chunkWavePrompt('graphify-out/chunks/chunk-01.md', 'rebuild')],
   ];
 
-  it.each(rebuildPrompts.slice(0, 2))('%s backs up graph.json before deleting build state', (_name, prompt) => {
-    expect(prompt).toContain('copy it to graphify-out/graph.json.pre-rebuild.bak');
-    expect(prompt).toContain('Verify the backup file exists before deleting or clearing anything.');
+  it.each(rebuildPrompts.slice(0, 2))('%s says the server already backed up and cleared state', (_name, prompt) => {
+    expect(prompt).toContain('The server has already backed up graph.json and cleared the stale build state.');
   });
 
-  it.each(rebuildPrompts.slice(0, 2))('%s deletes only the stale build state', (_name, prompt) => {
-    for (const stale of [
-      'graphify-out/cache/',
-      'graphify-out/.graphify_analysis.json',
-      'graphify-out/.graphify_semantic_marker',
-      'graphify-out/manifest.json',
-    ]) {
-      expect(prompt).toContain(stale);
-    }
+  it.each(rebuildPrompts)('%s no longer tells the agent to back up or delete build state', (_name, prompt) => {
+    expect(prompt).not.toContain('Then delete only the stale build state');
+    expect(prompt).not.toContain('copy it to graphify-out/graph.json.pre-rebuild.bak');
+    expect(prompt).not.toContain('Verify the backup file exists before deleting or clearing anything.');
   });
 
   it.each(rebuildPrompts)('%s extracts the full material/ tree, never incremental', (_name, prompt) => {
@@ -169,5 +163,41 @@ describe('graph prompts: stay inside the subject root', () => {
     expect(prompt).toContain('never clone repos');
     expect(prompt).toContain('<repo>/data/subjects/<name>');
     expect(prompt).toContain('derive absolute paths from the current working directory');
+  });
+});
+
+const DESTRUCTIVE_RULE =
+  'Never delete graphify-out/, graph.json or its backups. The server owns backup and cache clearing. If graph.json is missing, report it and stop — do not clean up or rebuild the directory.';
+
+const SHELL_CHEAT =
+  'CHEAT: Shell is Windows PowerShell 5.1: no &&, ||, ??, no subshell bash-isms; write ONE command per tool call, quote paths with spaces, chain only with ;. If a command fails twice, stop and report the exact error text — do not keep retrying variants.';
+
+const INSPECT_RULE =
+  'To inspect the graph run exactly: & "$env:STUDI0_GRAPH_PY" "graphify-out\\inspect_graph.py" — never parse JSON with PowerShell.';
+
+describe('graph prompts: destructive and shell guardrails', () => {
+  const guarded: [string, string][] = [
+    ...prompts,
+    ['extractionPrompt rebuild', extractionPrompt('rebuild', 'st2334')],
+    ['planPrompt rebuild', planPrompt('rebuild', 'st2334')],
+    ['chunkWavePrompt rebuild', chunkWavePrompt('graphify-out/chunks/chunk-01.md', 'rebuild')],
+    ['VERIFICATION_PROMPT', VERIFICATION_PROMPT],
+  ];
+
+  it.each(guarded)('%s forbids deleting graph artifacts', (_name, prompt) => {
+    expect(prompt).toContain(DESTRUCTIVE_RULE);
+  });
+
+  it.each(guarded)('%s carries the PowerShell cheat block', (_name, prompt) => {
+    expect(prompt).toContain(SHELL_CHEAT);
+  });
+
+  it.each(guarded)('%s points inspection at the server-written script', (_name, prompt) => {
+    expect(prompt).toContain(INSPECT_RULE);
+  });
+
+  it.each(guarded)('%s never asks the agent to clear build state', (_name, prompt) => {
+    expect(prompt).not.toContain('Then delete only the stale build state');
+    expect(prompt).not.toContain('graphify-out/cache/');
   });
 });
