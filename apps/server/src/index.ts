@@ -8,7 +8,7 @@ const { app, ctx } = await buildApp();
 for (const subject of listSubjects(ctx.db)) {
   try {
     await ensureLayout(subject.path);
-    await syncTeacherAgent(subject.path, ctx.cfg.maxChunkConcurrency, ctx.cfg.harness);
+    await syncTeacherAgent(subject.path, ctx.cfg.harness);
     // index pre-existing lessons (e.g. teach-skill workspaces from before registration)
     await detectAndIndexLessons(ctx.db, subject, new Map(), ctx.events);
   } catch {

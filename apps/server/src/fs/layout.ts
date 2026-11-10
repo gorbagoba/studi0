@@ -34,17 +34,13 @@ export async function ensureLayout(subjectRoot: string): Promise<void> {
 
 /**
  * Sync the canonical agent files into the subject, interpolating the runtime
- * placeholders: {{CHUNK_CONCURRENCY}} in studi0-pipeline.md (the file itself
- * ships with the placeholder; the number is runtime config so pnpm calibrate
- * can change it) and {{HARNESS}} (the user's coding harness, setup-configured).
+ * placeholder {{HARNESS}} (the user's coding harness, setup-configured).
  */
-export async function syncTeacherAgent(subjectRoot: string, chunkConcurrency: number, harness = 'opencode'): Promise<void> {
+export async function syncTeacherAgent(subjectRoot: string, harness = 'opencode'): Promise<void> {
   for (const name of AGENT_FILES) {
     const src = path.join(agentDir, name);
     if (!existsSync(src)) continue;
-    const content = (await readFile(src, 'utf8'))
-      .replaceAll('{{CHUNK_CONCURRENCY}}', String(chunkConcurrency))
-      .replaceAll('{{HARNESS}}', harness);
+    const content = (await readFile(src, 'utf8')).replaceAll('{{HARNESS}}', harness);
     await safeWriteFile(path.join(subjectRoot, '.opencode', 'agents', name), content);
   }
 }

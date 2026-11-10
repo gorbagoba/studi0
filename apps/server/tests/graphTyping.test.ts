@@ -3,9 +3,10 @@ import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-// stub spawn: the runner's plan/merge/verification stages must not execute
+// stub spawn + extraction: the runner's verification stage must not execute, and
+// extraction is server-owned (a fake graphify would need a real binary)
 process.env.GRAPHIFY_BIN = process.execPath;
-const mocks = vi.hoisted(() => ({ spawnArgs: vi.fn(), chatCompletion: vi.fn() }));
+const mocks = vi.hoisted(() => ({ spawnArgs: vi.fn(), chatCompletion: vi.fn(), extract: vi.fn() }));
 vi.mock('../src/util/proc.js', () => ({
   spawnArgs: mocks.spawnArgs,
   killTreeWithDeadline: vi.fn(),
@@ -14,6 +15,7 @@ vi.mock('../src/util/proc.js', () => ({
   commandLineMentions: async () => true,
   resolveOpencodeBin: () => 'opencode-stub',
 }));
+vi.mock('../src/graph/extract.js', () => ({ runGraphifyExtract: mocks.extract }));
 vi.mock('../src/teacher/llm.js', () => ({ chatCompletion: mocks.chatCompletion }));
 
 import {
@@ -134,32 +136,26 @@ describe('graph file helpers', () => {
   });
 });
 
-/** Run one pipeline job with stubbed spawns and a stub typing answer. */
+/** Run one pipeline job with a stubbed spawn, a stubbed extraction and a stub typing answer. */
 async function runJob(
   kind: 'build' | 'update' | 'recluster' | 'rebuild',
   graph: unknown = graphifyGraph,
 ): Promise<{ outcome: Awaited<ReturnType<ReturnType<typeof makeRunPipeline>>>; dir: string }> {
   const dir = await mkdtemp(path.join(tmpdir(), 'studi0-typing-run-'));
   made.push(dir);
-  const chunk = 'graphify-out/chunks/chunk-01.md';
-  await mkdir(path.join(dir, 'graphify-out', 'chunks'), { recursive: true });
-  await writeFile(path.join(dir, chunk), 'x');
+  await mkdir(path.join(dir, 'graphify-out'), { recursive: true });
   await writeFile(path.join(dir, 'graphify-out', 'graph.json'), JSON.stringify(graph));
   const db = openDb(path.join(dir, 'studi0.db'));
   insertSubject(db, { id: 'subject-1', name: 'S', path: dir, created_at: new Date().toISOString() });
   const job = jobsRepo.insertJob(db, 'job-1', 'subject-1', kind);
   mocks.spawnArgs.mockReset();
-  mocks.spawnArgs.mockImplementation((args: string[]) => ({
+  mocks.spawnArgs.mockImplementation(() => ({
     pid: 4242,
-    done: Promise.resolve({
-      code: 0,
-      stdout: args[args.length - 1].includes('PLANNER')
-        ? JSON.stringify({ chunks: [chunk], total: 1 })
-        : '',
-      stderr: '',
-    }),
+    done: Promise.resolve({ code: 0, stdout: '', stderr: '' }),
     child: { kill: () => undefined, stdout: null, stderr: null },
   }));
+  mocks.extract.mockReset();
+  mocks.extract.mockResolvedValue({ ok: true });
   mocks.chatCompletion.mockReset();
   mocks.chatCompletion.mockResolvedValue({ choices: [{ message: { content: answer } }] });
 

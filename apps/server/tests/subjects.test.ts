@@ -46,17 +46,15 @@ describe('subjects CRUD (T03)', () => {
       'utf8',
     );
     expect(synced).toBe(canonical);
-    // pipeline agent synced alongside the teacher agent, with the concurrency
-    // placeholder interpolated (the canonical file ships with {{CHUNK_CONCURRENCY}})
+    // pipeline agent synced alongside the teacher agent, with the harness
+    // placeholder interpolated (the canonical file ships with {{HARNESS}})
     const pipelineSynced = await readFile(
       path.join(courseDir, '.opencode', 'agents', 'studi0-pipeline.md'),
       'utf8',
     );
     const pipelineCanonical = (
       await readFile(path.resolve(import.meta.dirname, '../src/../agents/studi0-pipeline.md'), 'utf8')
-    )
-      .replaceAll('{{CHUNK_CONCURRENCY}}', String(makeConfig().maxChunkConcurrency))
-      .replaceAll('{{HARNESS}}', makeConfig().harness);
+    ).replaceAll('{{HARNESS}}', makeConfig().harness);
     expect(pipelineSynced).toBe(pipelineCanonical);
     await rm(courseDir, { recursive: true, force: true });
   });

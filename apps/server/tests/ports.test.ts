@@ -74,19 +74,6 @@ describe('port configuration', () => {
     expect([cfg.port, cfg.ocPort, cfg.vitePort, cfg.previewPort]).toEqual([3999, 44996, 5199, 4199]);
   });
 
-  it('maxChunkConcurrency: STUDI0_MAX_CHUNK_CONCURRENCY clamped to 1–12, junk → default', () => {
-    setEnv('STUDI0_MAX_CHUNK_CONCURRENCY', '7');
-    expect(makeConfig().maxChunkConcurrency).toBe(7);
-    setEnv('STUDI0_MAX_CHUNK_CONCURRENCY', '0');
-    expect(makeConfig().maxChunkConcurrency).toBe(1);
-    setEnv('STUDI0_MAX_CHUNK_CONCURRENCY', '99');
-    expect(makeConfig().maxChunkConcurrency).toBe(12);
-    setEnv('STUDI0_MAX_CHUNK_CONCURRENCY', 'junk');
-    expect(makeConfig().maxChunkConcurrency).toBe(4);
-    delete process.env.STUDI0_MAX_CHUNK_CONCURRENCY;
-    expect(makeConfig().maxChunkConcurrency).toBe(4);
-  });
-
   it('Host allowlist follows configured ports — old defaults die', { timeout: 20000 }, async () => {
     setEnv('PORT', '3999');
     setEnv('VITE_PORT', '5199');
@@ -160,17 +147,17 @@ describe('setup helpers', () => {
     expect(writes[0]).toBe('# ports\nPORT=3999\nVITE_PORT=5199\nOC_PORT=44097\n');
   });
 
-  it('writeEnvFile replaces an existing value (calibrate updating the concurrency key)', () => {
+  it('writeEnvFile replaces an existing value (writeEnvFile replacing an owned key)', () => {
     const writes: string[] = [];
     writeEnvFile(
-      { STUDI0_MAX_CHUNK_CONCURRENCY: 6 },
+      { STUDI0_GRAPH_TOKEN_BUDGET: 6 },
       {
         exists: true,
-        read: () => 'PORT=3999\nSTUDI0_MAX_CHUNK_CONCURRENCY=4\nOTHER=yes\n',
+        read: () => 'PORT=3999\nSTUDI0_GRAPH_TOKEN_BUDGET=4\nOTHER=yes\n',
         write: (_p, t) => writes.push(t),
       },
     );
-    expect(writes[0]).toBe('PORT=3999\nSTUDI0_MAX_CHUNK_CONCURRENCY=6\nOTHER=yes\n');
+    expect(writes[0]).toBe('PORT=3999\nSTUDI0_GRAPH_TOKEN_BUDGET=6\nOTHER=yes\n');
   });
 });
 
@@ -240,3 +227,5 @@ describe('harness + python tool choices', () => {
     ]);
   });
 });
+
+

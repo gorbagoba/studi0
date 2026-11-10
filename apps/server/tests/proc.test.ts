@@ -8,6 +8,8 @@ import type { TestHarness } from './helpers';
 
 // route every spawnArgs call at node itself: a real child without needing opencode
 process.env.OPENCODE_BIN = process.execPath;
+// extraction is server-owned: GRAPHIFY_BIN=node runs the subject-local fake steps
+process.env.GRAPHIFY_BIN = process.execPath;
 // blank the gateway: the typing pass must not reach a real model
 process.env.CHAT_BASE_URL = '';
 
@@ -24,31 +26,56 @@ async function createSubject(name: string): Promise<string> {
 }
 
 /**
- * The pipeline child script: when OPENCODE_BIN=node, `node run --auto <prompt>`
- * executes this file in the subject dir. Prints protocol lines; optionally
- * sleeps (slow child) or leaves an orphan grandchild behind (reaping test).
+ * Extension-less fake steps run by node from the subject cwd: `node extract …`
+ * and `node cluster-only …` fake graphify, `node run … ` fakes opencode.
+ * process.getBuiltinModule keeps the files loadable as CJS and ESM alike.
  */
-const RUN_SCRIPT = `const { spawn } = require('node:child_process');
-const fs = require('node:fs');
+const EXTRACT_SCRIPT = `const fs = process.getBuiltinModule('node:fs');
+console.log('chunk 1/1');
+if (process.env.STUDI0_TEST_SLOW === '1') {
+  fs.writeFileSync('extract-pid.txt', String(process.pid));
+  setTimeout(() => process.exit(0), 60000);
+} else if (process.env.STUDI0_TEST_NO_GRAPH !== '1') {
+  const nodes = Array.from({ length: 24 }, (_, i) => ({ id: 'n' + i, label: 'Concept ' + i, entity_type: 'Concept' }));
+  const links = nodes.map((n, i) => ({ source: n.id, target: nodes[(i + 1) % nodes.length].id, relation: 'uses' }));
+  fs.mkdirSync('graphify-out', { recursive: true });
+  fs.writeFileSync('graphify-out/graph.json', JSON.stringify({ nodes, links }));
+}
+`;
+
+const CLUSTER_SCRIPT = 'process.exit(0);\n';
+
+/**
+ * Fake verification one-shot: prints the report; can leave a detached grandchild
+ * behind (reaping test) when the prompt asks for verification.
+ */
+const RUN_SCRIPT = `const fs = process.getBuiltinModule('node:fs');
+const { spawn } = process.getBuiltinModule('node:child_process');
 const argv = process.argv.join(' ');
 if (process.env.STUDI0_TEST_GC === '1' && argv.includes('graph verification agent') && process.env.STUDI0_TEST_GC_PID) {
   // detached: must outlive its parent to simulate the real orphan case
   const g = spawn(process.execPath, ['-e', 'setTimeout(()=>{}, 60000)'], { stdio: 'ignore', detached: true });
   fs.writeFileSync(process.env.STUDI0_TEST_GC_PID, String(g.pid));
 }
-if (process.env.STUDI0_TEST_SLOW === '1') { setTimeout(() => process.exit(0), 60000); return; }
-console.log('studi0-progress {"done":0,"total":1,"file":null}');
-console.log('studi0-progress {"done":1,"total":1,"file":"material/a.md"}');
-console.log('DONE 1 files ok, 0 failed.');
-// real graphify always leaves a graph behind; the no-graph variant (fake success) skips this
-if (process.env.STUDI0_TEST_NO_GRAPH !== '1') {
-  const nodes = Array.from({ length: 24 }, (_, i) => ({ id: 'n' + i, label: 'Concept ' + i, entity_type: 'Concept' }));
-  const links = nodes.map((n, i) => ({ source: n.id, target: nodes[(i + 1) % nodes.length].id, relation: 'uses' }));
-  fs.mkdirSync('graphify-out', { recursive: true });
-  fs.writeFileSync('graphify-out/graph.json', JSON.stringify({ nodes, links }));
-}
+console.log('## Confirmed edges\\n\\n- a --uses--> b — supported by material');
 process.exit(0);
 `;
+
+async function stagePipeline(root: string): Promise<void> {
+  await writeFile(path.join(root, 'extract'), EXTRACT_SCRIPT);
+  await writeFile(path.join(root, 'cluster-only'), CLUSTER_SCRIPT);
+  await writeFile(path.join(root, 'run'), RUN_SCRIPT);
+}
+
+async function waitForStatus(jobId: string, timeoutMs = 30_000): Promise<Record<string, unknown>> {
+  const t0 = Date.now();
+  for (;;) {
+    const job = (await h!.app.inject({ method: 'GET', url: `/api/jobs/${jobId}` })).json() as Record<string, unknown>;
+    if (['complete', 'partial', 'failed', 'cancelled'].includes(job.status as string)) return job;
+    if (Date.now() - t0 > timeoutMs) return job;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
 
 describe('proc + real pipeline runner (QA blocker 1 / minor 8)', () => {
   it('spawnArgs collects a real child with setEncoding streams (regression: ERR_INVALID_ARG_TYPE in Buffer.concat)', async () => {
@@ -96,28 +123,21 @@ describe('proc + real pipeline runner (QA blocker 1 / minor 8)', () => {
     await rm(dir, { recursive: true, force: true });
   }, 30_000);
 
-  it('real runner: protocol lines drive progress, job completes with artifacts', async () => {
+  it('real runner: graphify chunk lines drive progress, job completes with artifacts', async () => {
     h = await makeHarness();
     const id = await createSubject('RealRun');
     const subject = (await h.app.inject({ method: 'GET', url: `/api/subjects/${id}` })).json();
-    await writeFile(path.join(subject.path, 'run'), RUN_SCRIPT);
+    await stagePipeline(subject.path);
     const created = await h.app.inject({
       method: 'POST',
       url: `/api/subjects/${id}/jobs`,
       payload: { kind: 'build' },
     });
     expect(created.statusCode).toBe(202);
-    const jobId = created.json().id;
-    const t0 = Date.now();
-    let job = { status: '', progress: { done: 0, total: 0 } };
-    while (Date.now() - t0 < 30_000) {
-      job = (await h.app.inject({ method: 'GET', url: `/api/jobs/${jobId}` })).json();
-      if (['complete', 'partial', 'failed', 'cancelled'].includes(job.status)) break;
-      await new Promise((r) => setTimeout(r, 100));
-    }
+    const job = await waitForStatus(created.json().id);
     expect(job.status).toBe('complete');
-    expect(job.progress).toEqual({ done: 1, total: 1, currentFile: 'material/a.md' });
-    // verification oneshot ran and its report landed (real second run through the same spawn path)
+    expect(job.progress).toEqual({ done: 1, total: 1, currentFile: null });
+    // verification one-shot ran and its report landed (real second run through the same spawn path)
     expect(await readFile(path.join(subject.path, 'graphify-out', 'VERIFY_REPORT.md'), 'utf8'))
       .toBeTruthy();
   }, 60_000);
@@ -130,18 +150,12 @@ describe('proc + real pipeline runner (QA blocker 1 / minor 8)', () => {
     try {
       const id = await createSubject('Reap');
       const subject = (await h.app.inject({ method: 'GET', url: `/api/subjects/${id}` })).json();
-      await writeFile(path.join(subject.path, 'run'), RUN_SCRIPT);
+      await stagePipeline(subject.path);
       const jobId = (
         await h.app.inject({ method: 'POST', url: `/api/subjects/${id}/jobs`, payload: { kind: 'build' } })
       ).json().id;
-      const t0 = Date.now();
-      let status = '';
-      while (Date.now() - t0 < 30_000) {
-        status = (await h.app.inject({ method: 'GET', url: `/api/jobs/${jobId}` })).json().status;
-        if (['complete', 'partial', 'failed', 'cancelled'].includes(status)) break;
-        await new Promise((r) => setTimeout(r, 100));
-      }
-      expect(status).toBe('complete');
+      const job = await waitForStatus(jobId);
+      expect(job.status).toBe('complete');
       const gcPid = (await readFile(gcPidFile, 'utf8')).trim();
       let dead = !isAlive(gcPid);
       for (let i = 0; i < 40 && !dead; i++) {
@@ -161,17 +175,11 @@ describe('proc + real pipeline runner (QA blocker 1 / minor 8)', () => {
     try {
       const id = await createSubject('NoGraph');
       const subject = (await h.app.inject({ method: 'GET', url: `/api/subjects/${id}` })).json();
-      await writeFile(path.join(subject.path, 'run'), RUN_SCRIPT);
+      await stagePipeline(subject.path);
       const jobId = (
         await h.app.inject({ method: 'POST', url: `/api/subjects/${id}/jobs`, payload: { kind: 'build' } })
       ).json().id;
-      const t0 = Date.now();
-      let job = { status: '', error: '' };
-      while (Date.now() - t0 < 30_000) {
-        job = (await h.app.inject({ method: 'GET', url: `/api/jobs/${jobId}` })).json();
-        if (['complete', 'partial', 'failed', 'cancelled'].includes(job.status)) break;
-        await new Promise((r) => setTimeout(r, 100));
-      }
+      const job = await waitForStatus(jobId);
       expect(job.status).toBe('failed');
       expect(job.error).toContain('graph.json');
       // lastBuiltAt must NOT advance on a fake success — the graph state did not change
@@ -182,13 +190,13 @@ describe('proc + real pipeline runner (QA blocker 1 / minor 8)', () => {
     }
   }, 60_000);
 
-  it('real runner: cancel kills the recorded child tree within 5s (AC4)', async () => {
+  it('real runner: cancel kills the recorded extraction tree within 5s (AC4)', async () => {
     h = await makeHarness();
     process.env.STUDI0_TEST_SLOW = '1';
     try {
       const id = await createSubject('RealCancel');
       const subject = (await h.app.inject({ method: 'GET', url: `/api/subjects/${id}` })).json();
-      await writeFile(path.join(subject.path, 'run'), RUN_SCRIPT);
+      await stagePipeline(subject.path);
       const jobId = (
         await h.app.inject({ method: 'POST', url: `/api/subjects/${id}/jobs`, payload: { kind: 'build' } })
       ).json().id;
@@ -206,14 +214,9 @@ describe('proc + real pipeline runner (QA blocker 1 / minor 8)', () => {
       expect(pid).toBeTruthy();
       const cancel = await h.app.inject({ method: 'POST', url: `/api/jobs/${jobId}/cancel` });
       expect(cancel.statusCode).toBe(200);
-      let status = '';
-      while (Date.now() - t0 < 20_000) {
-        status = (await h.app.inject({ method: 'GET', url: `/api/jobs/${jobId}` })).json().status;
-        if (status === 'cancelled') break;
-        await new Promise((r) => setTimeout(r, 50));
-      }
+      const job = await waitForStatus(jobId, 20_000);
       expect(Date.now() - t0).toBeLessThan(20_000);
-      expect(status).toBe('cancelled');
+      expect(job.status).toBe('cancelled');
       expect(isAlive(pid as string)).toBe(false);
     } finally {
       delete process.env.STUDI0_TEST_SLOW;

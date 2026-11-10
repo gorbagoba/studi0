@@ -22,7 +22,6 @@ export interface Config {
   setupRunTimeoutMs: number;
   sseHeartbeatMs: number;
   splitTargetBytes: number; // pdf-split target size per part (test/tuning seam)
-  maxChunkConcurrency: number; // chunk-wave parallelism (STUDI0_MAX_CHUNK_CONCURRENCY, clamped 1–12)
   harness: 'opencode' | 'claude' | 'codex'; // user's coding harness (STUDI0_HARNESS) — skill targeting + pipeline agent lane; runner is opencode today (seam for future adapters)
   /** chat engine: 'native' = server-native OpenAI-compatible loop; 'opencode' = legacy wrapper */
   chatEngine: 'native' | 'opencode';
@@ -37,10 +36,7 @@ export interface Config {
   chatDisableThinking: boolean;
   /** headless browser for lesson render review (STUDI0_BROWSER_BIN); null = auto-detect */
   browserBin: string | null;
-  /** per-stage graph pipeline models (`opencode run --model`); extraction is the high-volume stage */
-  graphPlanModel: string;
-  graphExtractModel: string;
-  graphMergeModel: string;
+  /** verification model (`opencode run --model`); extraction runs inside graphify */
   graphVerifyModel: string;
   /** graphify's own LLM backend (GRAPHIFY_BACKEND); 'none' = local AST-only */
   graphBackend: string;
@@ -88,7 +84,6 @@ try {
       'VITE_PORT',
       'PREVIEW_PORT',
       'STUDI0_DATA_DIR',
-      'STUDI0_MAX_CHUNK_CONCURRENCY',
       'STUDI0_SPLIT_TARGET_BYTES',
       'STUDI0_HARNESS',
       'OPENCODE_BIN',
@@ -100,9 +95,6 @@ try {
       'CHAT_MODEL_LESSON_TEMPLATE_KWARGS',
       'CHAT_DISABLE_THINKING',
       'STUDI0_BROWSER_BIN',
-      'STUDI0_GRAPH_PLAN_MODEL',
-      'STUDI0_GRAPH_EXTRACT_MODEL',
-      'STUDI0_GRAPH_MERGE_MODEL',
       'STUDI0_GRAPH_VERIFY_MODEL',
       'STUDI0_GRAPH_BACKEND',
       'STUDI0_GRAPH_BASE_URL',
@@ -125,7 +117,6 @@ try {
 
 export function makeConfig(dataDir?: string): Config {
   const dir = dataDir ?? process.env.STUDI0_DATA_DIR ?? resolve(repoRoot, 'data');
-  const chunkConcurrency = Number(process.env.STUDI0_MAX_CHUNK_CONCURRENCY);
   // native engine is valid only with a complete gateway config — else fall back
   const nativeReady = Boolean(process.env.CHAT_BASE_URL && process.env.CHAT_API_KEY && process.env.CHAT_MODEL);
   let chatEngine: 'native' | 'opencode' = 'opencode';
@@ -185,9 +176,6 @@ export function makeConfig(dataDir?: string): Config {
     setupRunTimeoutMs: 2_700_000, // whole-course lesson generation runs long
     sseHeartbeatMs: 15_000,
     splitTargetBytes: Number(process.env.STUDI0_SPLIT_TARGET_BYTES ?? 15 * 1024 * 1024),
-    maxChunkConcurrency: Number.isFinite(chunkConcurrency)
-      ? Math.min(12, Math.max(1, chunkConcurrency))
-      : 4,
     harness: ['opencode', 'claude', 'codex'].includes(process.env.STUDI0_HARNESS ?? '')
       ? (process.env.STUDI0_HARNESS as 'opencode' | 'claude' | 'codex')
       : 'opencode',
@@ -200,10 +188,6 @@ export function makeConfig(dataDir?: string): Config {
     // chat templates ignore unknown kwargs, so opting out is only for gateways that reject them
     chatDisableThinking: !['false', '0'].includes((process.env.CHAT_DISABLE_THINKING ?? '').toLowerCase()),
     browserBin: process.env.STUDI0_BROWSER_BIN ?? null,
-    // the global default model thinks always-on (50s+ per chunk); extraction needs a fast non-thinking model
-    graphPlanModel: process.env.STUDI0_GRAPH_PLAN_MODEL ?? 'soclaas/nemotron3.5:30b',
-    graphExtractModel: process.env.STUDI0_GRAPH_EXTRACT_MODEL ?? 'soclaas/nemotron3.5:30b',
-    graphMergeModel: process.env.STUDI0_GRAPH_MERGE_MODEL ?? 'soclaas/nemotron3.5:30b',
     graphVerifyModel: process.env.STUDI0_GRAPH_VERIFY_MODEL ?? 'soclaas/x-test-2',
     graphBackend,
     graphBaseUrl,

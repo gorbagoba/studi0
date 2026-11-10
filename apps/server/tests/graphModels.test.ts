@@ -5,12 +5,12 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { jobKindSchema } from '@studi0/shared';
 
-// stub spawn: the whole point is reading the args each stage spawns with
+// stub the opencode spawn (verification only) and the server-side extraction:
 // preflight probes GRAPHIFY_BIN for real — node itself answers --version
 process.env.GRAPHIFY_BIN = process.execPath;
-// blank the gateway: spawns are stubbed, so the typing pass must not reach a real model
+// blank the gateway: the typing pass must not reach a real model
 process.env.CHAT_BASE_URL = '';
-const mocks = vi.hoisted(() => ({ spawnArgs: vi.fn() }));
+const mocks = vi.hoisted(() => ({ spawnArgs: vi.fn(), extract: vi.fn() }));
 vi.mock('../src/util/proc.js', () => ({
   spawnArgs: mocks.spawnArgs,
   killTreeWithDeadline: vi.fn(),
@@ -19,6 +19,7 @@ vi.mock('../src/util/proc.js', () => ({
   commandLineMentions: async () => true,
   resolveOpencodeBin: () => 'opencode-stub',
 }));
+vi.mock('../src/graph/extract.js', () => ({ runGraphifyExtract: mocks.extract }));
 
 import { openDb } from '../src/db/index.js';
 import * as jobsRepo from '../src/db/repos/jobs.js';
@@ -26,7 +27,6 @@ import { insertSubject } from '../src/db/repos/subjects.js';
 import { makeRunPipeline } from '../src/pipeline/runner.js';
 import { makeConfig } from '../src/config.js';
 
-const CHUNK = 'graphify-out/chunks/chunk-01.md';
 const made: string[] = [];
 
 /** Typed graph so the hollow-extraction guard passes (no material/ files → count 0). */
@@ -44,15 +44,13 @@ afterEach(async () => {
   }
 });
 
-/** Run one pipeline job with stubbed spawns; returns every spawned arg array and the subject root. */
-async function spawnedArgs(
+/** Run one pipeline job with stubbed opencode + extraction; returns spawn args, extraction calls, dir. */
+async function runJob(
   kind: 'build' | 'update' | 'recluster' | 'rebuild' = 'build',
   layout: 'root' | 'nested' = 'root',
-): Promise<{ calls: string[][]; dir: string }> {
+): Promise<{ calls: string[][]; extractions: unknown[][]; dir: string }> {
   const dir = await mkdtemp(path.join(tmpdir(), 'studi0-models-'));
   made.push(dir);
-  await mkdir(path.join(dir, 'graphify-out', 'chunks'), { recursive: true });
-  await writeFile(path.join(dir, CHUNK), 'x');
   // 'nested' reproduces an agent that cd-ed into graphify-out before extracting
   const graphDir = layout === 'nested' ? path.join(dir, 'graphify-out', 'graphify-out') : path.join(dir, 'graphify-out');
   await mkdir(graphDir, { recursive: true });
@@ -61,18 +59,13 @@ async function spawnedArgs(
   insertSubject(db, { id: 'subject-1', name: 'S', path: dir, created_at: new Date().toISOString() });
   const job = jobsRepo.insertJob(db, 'job-1', 'subject-1', kind);
   mocks.spawnArgs.mockReset();
-  mocks.spawnArgs.mockImplementation((args: string[]) => ({
+  mocks.spawnArgs.mockImplementation(() => ({
     pid: 4242,
-    done: Promise.resolve({
-      code: 0,
-      // the planner must return its chunk list; every other stage just exits 0
-      stdout: args[args.length - 1].includes('PLANNER')
-        ? JSON.stringify({ chunks: [CHUNK], total: 1 })
-        : '',
-      stderr: '',
-    }),
+    done: Promise.resolve({ code: 0, stdout: '', stderr: '' }),
     child: { kill: () => undefined, stdout: null, stderr: null },
   }));
+  mocks.extract.mockReset();
+  mocks.extract.mockResolvedValue({ ok: true });
   const outcome = await makeRunPipeline(db, makeConfig(dir))(
     job,
     { id: 'subject-1', name: 'S', path: dir } as never,
@@ -81,7 +74,11 @@ async function spawnedArgs(
   );
   expect(outcome.status).toBe('complete');
   db.close();
-  return { calls: mocks.spawnArgs.mock.calls.map((c) => c[0] as string[]), dir };
+  return {
+    calls: mocks.spawnArgs.mock.calls.map((c) => c[0] as string[]),
+    extractions: mocks.extract.mock.calls.map((c) => c as unknown[]),
+    dir,
+  };
 }
 
 /** The `--model` value of the one spawn whose trailing prompt carries the stage marker. */
@@ -91,39 +88,24 @@ function modelFor(calls: string[][], marker: string): string | undefined {
   return args![args!.indexOf('--model') + 1];
 }
 
-describe('graph pipeline model per stage', () => {
-  it('spawns plan/extract/merge on the fast model and verification on the thinking model', async () => {
-    const { calls } = await spawnedArgs();
-    expect(modelFor(calls, 'PLANNER')).toBe('soclaas/nemotron3.5:30b');
-    expect(modelFor(calls, 'Execute this graphify chunk')).toBe('soclaas/nemotron3.5:30b');
-    expect(modelFor(calls, 'per-chunk extraction outputs')).toBe('soclaas/nemotron3.5:30b');
+describe('graph pipeline models', () => {
+  it('runs extraction on the server and verification on the thinking model', async () => {
+    const { calls, extractions } = await runJob();
+    expect(extractions).toHaveLength(1);
     expect(modelFor(calls, 'graph verification agent')).toBe('soclaas/x-test-2');
   });
 
-  it('honours the STUDI0_GRAPH_*_MODEL overrides', async () => {
-    process.env.STUDI0_GRAPH_PLAN_MODEL = 'ghost/plan';
-    process.env.STUDI0_GRAPH_EXTRACT_MODEL = 'ghost/extract';
-    process.env.STUDI0_GRAPH_MERGE_MODEL = 'ghost/merge';
+  it('honours the STUDI0_GRAPH_VERIFY_MODEL override', async () => {
     process.env.STUDI0_GRAPH_VERIFY_MODEL = 'ghost/verify';
     try {
-      const { calls } = await spawnedArgs();
-      expect(modelFor(calls, 'PLANNER')).toBe('ghost/plan');
-      expect(modelFor(calls, 'Execute this graphify chunk')).toBe('ghost/extract');
-      expect(modelFor(calls, 'per-chunk extraction outputs')).toBe('ghost/merge');
+      const { calls } = await runJob();
       expect(modelFor(calls, 'graph verification agent')).toBe('ghost/verify');
     } finally {
-      for (const key of [
-        'STUDI0_GRAPH_PLAN_MODEL',
-        'STUDI0_GRAPH_EXTRACT_MODEL',
-        'STUDI0_GRAPH_MERGE_MODEL',
-        'STUDI0_GRAPH_VERIFY_MODEL',
-      ]) {
-        delete process.env[key];
-      }
+      delete process.env.STUDI0_GRAPH_VERIFY_MODEL;
     }
   });
 
-  it('spawns every stage with the graphify backend env', async () => {
+  it('spawns verification with the graphify backend env', async () => {
     const env = {
       STUDI0_GRAPH_BACKEND: 'openai',
       STUDI0_GRAPH_BASE_URL: 'http://gw.local/v1',
@@ -132,9 +114,9 @@ describe('graph pipeline model per stage', () => {
     };
     Object.assign(process.env, env);
     try {
-      await spawnedArgs();
+      await runJob();
       const envs = mocks.spawnArgs.mock.calls.map((c) => c[2] as Record<string, string>);
-      expect(envs.length).toBeGreaterThan(0); // plan + chunk(s) + merge + verification
+      expect(envs.length).toBeGreaterThan(0);
       for (const childEnv of envs) {
         expect(childEnv).toMatchObject({
           GRAPHIFY_BACKEND: 'openai',
@@ -150,36 +132,18 @@ describe('graph pipeline model per stage', () => {
     }
   });
 
-  it('passes the configured token budget to every extraction stage', async () => {
-    process.env.STUDI0_GRAPH_TOKEN_BUDGET = '1200';
-    try {
-      const { calls } = await spawnedArgs();
-      const extract = calls.filter((a) =>
-        /PLANNER|Execute this graphify chunk|per-chunk extraction outputs/.test(a[a.length - 1]),
-      );
-      expect(extract.length).toBeGreaterThan(0);
-      for (const args of extract) expect(args[args.length - 1]).toContain('--token-budget 1200');
-    } finally {
-      delete process.env.STUDI0_GRAPH_TOKEN_BUDGET;
-    }
-  });
-
-  it('runs a rebuild through the chunked wave path with the rebuild plan prompt', async () => {
-    const { calls, dir } = await spawnedArgs('rebuild');
-    const plan = calls.find((a) => a[a.length - 1].includes('PLANNER'));
-    expect(plan, 'no plan stage spawned').toBeTruthy();
-    expect(plan![plan!.length - 1]).toContain('REBUILD');
-    // backup and cache clearing are server-owned now
-    expect(plan![plan!.length - 1]).not.toContain('graph.json.pre-rebuild.bak');
+  it('runs a rebuild through server prep + server extraction, never an extraction agent', async () => {
+    const { calls, extractions, dir } = await runJob('rebuild');
+    expect(extractions).toHaveLength(1);
     expect(existsSync(path.join(dir, 'graphify-out', 'graph.json.pre-rebuild.bak'))).toBe(true);
-    expect(calls.some((a) => a[a.length - 1].includes('Execute this graphify chunk'))).toBe(true);
+    expect(calls.every((a) => a[a.length - 1].includes('graph verification agent'))).toBe(true);
     const buildLog = await readFile(path.join(dir, 'graphify-out', 'build.log'), 'utf8');
     expect(buildLog).toContain('full rebuild (cache cleared)');
     expect(buildLog).toContain('rebuild prep: backed up graph.json');
   });
 
   it('normalises a nested graphify-out before the success check', async () => {
-    const { dir } = await spawnedArgs('build', 'nested');
+    const { dir } = await runJob('build', 'nested');
 
     expect(existsSync(path.join(dir, 'graphify-out', 'graph.json'))).toBe(true);
     expect(existsSync(path.join(dir, 'graphify-out', 'graphify-out'))).toBe(false);

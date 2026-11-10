@@ -20,6 +20,13 @@ vi.mock('../src/util/proc.js', () => ({
   commandLineMentions: async () => true,
   resolveOpencodeBin: () => 'opencode-stub',
 }));
+// extraction is server-owned now: its spawn reports the pid through onPid
+vi.mock('../src/graph/extract.js', () => ({
+  runGraphifyExtract: async (opts: { onPid?: (pid: number) => void }) => {
+    opts.onPid?.(4242);
+    return { ok: true };
+  },
+}));
 
 import { openDb } from '../src/db/index.js';
 import * as jobsRepo from '../src/db/repos/jobs.js';

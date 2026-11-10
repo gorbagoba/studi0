@@ -103,7 +103,7 @@ export async function registerSubject(
   }
 
   await ensureLayout(root);
-  await syncTeacherAgent(root, cfg.maxChunkConcurrency, cfg.harness);
+  await syncTeacherAgent(root, cfg.harness);
   const row = subjectsRepo.insertSubject(db, {
     id: randomUUID(),
     name: body.name,

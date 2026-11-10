@@ -39,7 +39,7 @@ The POSIX branches of the process code (process-group spawn/kill via `detached`,
 
 ### Calibrate your provider
 
-`pnpm calibrate` fires ramped tiers of concurrent headless `opencode run` one-shots (`Reply with exactly: OK`, 75s timeout each, 2 rounds per tier; tiers 2→4→6→8, plus 12 only if all prior pass) and writes the highest fully-passing tier to `.env` as `STUDI0_MAX_CHUNK_CONCURRENCY` (the chunk-wave parallelism; clamped 1–12, default 4). The number is also interpolated into the synced `studi0-pipeline` agent file at subject registration. **Re-run after changing providers or plans** — the safe concurrency moves with the provider's rate limits.
+`pnpm calibrate` was retired: graph extraction now runs graphify directly (its own 4-way parallel chunk pool), so the `STUDI0_MAX_CHUNK_CONCURRENCY` knob it tuned no longer exists.
 
 ## Run
 
